@@ -9,7 +9,7 @@
 // 🔥 GROQ (para conversas - respeita prompt!)
 const GROQ_API_KEY = "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";
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const GROQ_MODEL = "llama-3.1-8b-instant"; // Modelo rápido e confiável
+const GROQ_MODEL = "llama-3.1-8b-instant";
 
 // Mistral (para imagens)
 const MISTRAL_API_KEY = "0k7vwPq3YQ2lq29J1dcxciBwyxE5QBV5";
@@ -139,6 +139,11 @@ function limparFormatacao(texto) {
 // ============================================
 
 async function chamarGroq(pergunta) {
+    console.log('🔵🔵🔵 CHAMANDO GROQ (conversa normal) 🔵🔵🔵');
+    console.log('📝 Pergunta:', pergunta);
+    console.log('📌 Modelo:', GROQ_MODEL);
+    console.log('📌 Prompt:', SYSTEM_PROMPT.substring(0, 100) + '...');
+    
     try {
         const response = await fetch(GROQ_URL, {
             method: 'POST',
@@ -161,6 +166,7 @@ async function chamarGroq(pergunta) {
         const data = await response.json();
         
         if (data.error) {
+            console.error('❌ Erro GROQ:', data.error);
             return `❌ Erro: ${data.error.message}`;
         }
 
@@ -172,6 +178,8 @@ async function chamarGroq(pergunta) {
             resposta = `Senhor, ${resposta}`;
         }
         
+        console.log('✅ RESPOSTA GROQ:', resposta.substring(0, 100) + '...');
+        
         historico.push({ role: 'user', content: pergunta });
         historico.push({ role: 'assistant', content: resposta });
         
@@ -180,6 +188,7 @@ async function chamarGroq(pergunta) {
         return resposta;
         
     } catch (error) {
+        console.error('❌ Erro GROQ:', error);
         return `❌ Erro de conexão: ${error.message}`;
     }
 }
@@ -189,6 +198,10 @@ async function chamarGroq(pergunta) {
 // ============================================
 
 async function chamarMistral(pergunta, imagem = null) {
+    console.log('🟢🟢🟢 CHAMANDO MISTRAL (imagem/PDF) 🟢🟢🟢');
+    console.log('📝 Pergunta:', pergunta);
+    console.log('📌 Modelo:', MISTRAL_MODEL);
+    
     try {
         let mensagem = { role: 'user', content: pergunta };
         
@@ -226,6 +239,7 @@ async function chamarMistral(pergunta, imagem = null) {
         const data = await response.json();
         
         if (data.error) {
+            console.error('❌ Erro MISTRAL:', data.error);
             return `❌ Erro: ${data.error.message}`;
         }
 
@@ -236,9 +250,12 @@ async function chamarMistral(pergunta, imagem = null) {
             resposta = `Senhor, ${resposta}`;
         }
         
+        console.log('✅ RESPOSTA MISTRAL:', resposta.substring(0, 100) + '...');
+        
         return resposta;
         
     } catch (error) {
+        console.error('❌ Erro MISTRAL:', error);
         return `❌ Erro de conexão: ${error.message}`;
     }
 }
@@ -596,28 +613,122 @@ function desligarCamera() {
 }
 
 // ============================================
+// ENVIAR ARQUIVO (IMAGEM OU PDF)
+// ============================================
+
+function enviarArquivo(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    
+    if (file.type.startsWith('image/')) {
+        reader.onload = function(e) {
+            imagemBase64 = e.target.result;
+            adicionarMensagem('user', '📸 Enviou uma imagem', { type: 'image', data: imagemBase64 });
+            adicionarMensagem('bot', 'Senhor, imagem recebida! O que você quer saber sobre ela?');
+            document.getElementById('fileInput').value = '';
+        };
+        reader.readAsDataURL(file);
+    } else if (file.type === 'application/pdf') {
+        reader.onload = async function(e) {
+            try {
+                const pdfData = new Uint8Array(e.target.result);
+                const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+                let textoCompleto = '';
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const content = await page.getTextContent();
+                    textoCompleto += content.items.map(item => item.str).join(' ') + '\n';
+                }
+                pdfTexto = textoCompleto;
+                adicionarMensagem('user', `📄 Enviou PDF: ${file.name}`, { type: 'pdf', name: file.name, size: file.size });
+                adicionarMensagem('bot', `Senhor, PDF "${file.name}" processado! ${pdf.numPages} páginas lidas.\n\nFaça perguntas sobre o conteúdo.`);
+                document.getElementById('fileInput').value = '';
+            } catch (error) {
+                adicionarMensagem('bot', `Senhor, erro ao ler PDF: ${error.message}`);
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    }
+}
+
+// ============================================
 // EXECUTAR COMANDO (PRINCIPAL)
 // ============================================
 
 async function executarComando(comando) {
     const cmd = comando.toLowerCase().trim();
     
+    console.log('========================================');
+    console.log('📨 COMANDO RECEBIDO:', cmd);
+    console.log('========================================');
+    
     // ============================================
     // COMANDOS DA CÂMERA
     // ============================================
     
     if (cmd.includes('abrir câmera') || cmd.includes('abrir camera') || cmd.includes('ativar câmera')) {
+        console.log('📸 ROTA: CÂMERA');
         await iniciarCamera();
         return;
     }
     
     if (cmd.includes('tirar foto') || cmd.includes('fotografar')) {
+        console.log('📸 ROTA: TIRAR FOTO');
         tirarFoto();
         return;
     }
     
     if (cmd.includes('desligar câmera') || cmd.includes('desligar camera') || cmd.includes('fechar câmera')) {
+        console.log('📸 ROTA: DESLIGAR CÂMERA');
         desligarCamera();
+        return;
+    }
+    
+    // ============================================
+    // SE TIVER IMAGEM, USA MISTRAL
+    // ============================================
+    
+    if (imagemBase64) {
+        console.log('🟢 ROTA: MISTRAL (imagem)');
+        const loadingDiv = document.createElement('div');
+        loadingDiv.className = 'message bot';
+        loadingDiv.id = 'loading-msg';
+        loadingDiv.innerHTML = `<div class="avatar">⚡</div><div class="bubble" style="color: var(--text-secondary);">📸 Analisando imagem...</div>`;
+        document.getElementById('chat').appendChild(loadingDiv);
+        document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
+        
+        const resposta = await chamarMistral(cmd, imagemBase64);
+        
+        const loadingElement = document.getElementById('loading-msg');
+        if (loadingElement) loadingElement.remove();
+        
+        adicionarMensagem('bot', resposta);
+        imagemBase64 = null;
+        return;
+    }
+    
+    // ============================================
+    // SE TIVER PDF, USA MISTRAL
+    // ============================================
+    
+    if (pdfTexto) {
+        console.log('🟢 ROTA: MISTRAL (PDF)');
+        const loadingDiv = document.createElement('div');
+        loadingDiv.className = 'message bot';
+        loadingDiv.id = 'loading-msg';
+        loadingDiv.innerHTML = `<div class="avatar">⚡</div><div class="bubble" style="color: var(--text-secondary);">📄 Analisando PDF...</div>`;
+        document.getElementById('chat').appendChild(loadingDiv);
+        document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
+        
+        const prompt = `Contexto do PDF: ${pdfTexto.substring(0, 4000)}\n\nPergunta do usuário: ${cmd}\n\nResponda como o J.A.R.V.I.S., chamando o usuário de "Senhor".`;
+        const resposta = await chamarMistral(prompt);
+        
+        const loadingElement = document.getElementById('loading-msg');
+        if (loadingElement) loadingElement.remove();
+        
+        adicionarMensagem('bot', resposta);
         return;
     }
     
@@ -626,6 +737,7 @@ async function executarComando(comando) {
     // ============================================
     
     if (cmd.includes('clima') || cmd.includes('tempo')) {
+        console.log('🌤️ ROTA: CLIMA');
         let cidade = cmd.replace(/clima\s*em\s*/i, '').replace(/tempo\s*em\s*/i, '').replace(/clima/i, '').replace(/tempo/i, '').trim();
         if (!cidade) cidade = 'São Paulo';
         const resposta = await buscarClima(cidade);
@@ -634,6 +746,7 @@ async function executarComando(comando) {
     }
     
     if (cmd.includes('previsão') || cmd.includes('previsao')) {
+        console.log('📅 ROTA: PREVISÃO');
         let cidade = cmd.replace(/previsão\s*/i, '').replace(/previsao\s*/i, '').trim();
         if (!cidade) cidade = 'São Paulo';
         const resposta = await buscarPrevisao(cidade);
@@ -642,12 +755,14 @@ async function executarComando(comando) {
     }
     
     if (cmd.includes('cotação') || cmd.includes('cotacao') || cmd.includes('dólar') || cmd.includes('euro') || cmd.includes('bitcoin')) {
+        console.log('💰 ROTA: COTAÇÃO');
         const resposta = await buscarCotacao();
         adicionarMensagem('bot', resposta);
         return;
     }
     
     if (cmd.includes('notícias') || cmd.includes('noticias')) {
+        console.log('📰 ROTA: NOTÍCIAS');
         let termo = cmd.replace(/notícias\s*sobre\s*/i, '').replace(/noticias\s*sobre\s*/i, '').replace(/notícias/i, '').replace(/noticias/i, '').trim();
         if (!termo) termo = 'Brasil';
         const resposta = await buscarNoticias(termo);
@@ -656,6 +771,7 @@ async function executarComando(comando) {
     }
     
     if (cmd.includes('pesquisar sobre') || cmd.includes('pesquisa sobre') || cmd.includes('o que é') || cmd.includes('quem é') || cmd.includes('sobre')) {
+        console.log('🔍 ROTA: WIKIPEDIA');
         let termo = cmd.replace(/^pesquisar sobre\s*/i, '').replace(/^pesquisa sobre\s*/i, '').replace(/^o que é\s*/i, '').replace(/^quem é\s*/i, '').replace(/^sobre\s*/i, '').trim();
         if (!termo) {
             adicionarMensagem('bot', 'Senhor, sobre o que você quer pesquisar?');
@@ -667,12 +783,14 @@ async function executarComando(comando) {
     }
     
     if (cmd.includes('abrir')) {
+        console.log('🌐 ROTA: ABRIR SITE');
         const resultado = abrirSite(cmd);
         adicionarMensagem('bot', resultado);
         return;
     }
     
     if (cmd.includes('calcular') || cmd.includes('calcule')) {
+        console.log('🧮 ROTA: CALCULADORA');
         const expressao = cmd.replace(/calcular\s*/i, '').replace(/calcule\s*/i, '').trim();
         const resposta = calcular(expressao);
         adicionarMensagem('bot', resposta);
@@ -680,6 +798,7 @@ async function executarComando(comando) {
     }
     
     if (cmd.includes('hora') || cmd.includes('horas') || cmd === 'que horas são') {
+        console.log('🕐 ROTA: HORA');
         const agora = new Date();
         const resposta = `Senhor, são ${agora.toLocaleTimeString('pt-BR')} do dia ${agora.toLocaleDateString('pt-BR', {
             weekday: 'long',
@@ -692,6 +811,7 @@ async function executarComando(comando) {
     }
     
     if (cmd.includes('lembrete')) {
+        console.log('📌 ROTA: LEMBRETE');
         const texto = cmd.replace('lembrete', '').trim() || 'sem descrição';
         enviarNotificacao('📌 Lembrete', `Não se esqueça: ${texto}`);
         adicionarMensagem('bot', `Senhor, lembrete salvo: "${texto}"`);
@@ -699,6 +819,7 @@ async function executarComando(comando) {
     }
     
     if (cmd.includes('ajuda') || cmd.includes('comandos') || cmd.includes('o que você faz')) {
+        console.log('❓ ROTA: AJUDA');
         adicionarMensagem('bot', `
 Senhor, aqui estão todos os meus comandos:
 
@@ -738,52 +859,10 @@ Senhor, aqui estão todos os meus comandos:
     }
     
     // ============================================
-    // SE TIVER IMAGEM, USA MISTRAL
-    // ============================================
-    
-    if (imagemBase64) {
-        const loadingDiv = document.createElement('div');
-        loadingDiv.className = 'message bot';
-        loadingDiv.id = 'loading-msg';
-        loadingDiv.innerHTML = `<div class="avatar">⚡</div><div class="bubble" style="color: var(--text-secondary);">📸 Analisando imagem...</div>`;
-        document.getElementById('chat').appendChild(loadingDiv);
-        document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
-        
-        const resposta = await chamarMistral(cmd, imagemBase64);
-        
-        const loadingElement = document.getElementById('loading-msg');
-        if (loadingElement) loadingElement.remove();
-        
-        adicionarMensagem('bot', resposta);
-        imagemBase64 = null;
-        return;
-    }
-    
-    // ============================================
-    // SE TIVER PDF, USA MISTRAL
-    // ============================================
-    
-    if (pdfTexto) {
-        const loadingDiv = document.createElement('div');
-        loadingDiv.className = 'message bot';
-        loadingDiv.id = 'loading-msg';
-        loadingDiv.innerHTML = `<div class="avatar">⚡</div><div class="bubble" style="color: var(--text-secondary);">📄 Analisando PDF...</div>`;
-        document.getElementById('chat').appendChild(loadingDiv);
-        document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
-        
-        const prompt = `Contexto do PDF: ${pdfTexto.substring(0, 4000)}\n\nPergunta do usuário: ${cmd}\n\nResponda como o J.A.R.V.I.S., chamando o usuário de "Senhor".`;
-        const resposta = await chamarMistral(prompt);
-        
-        const loadingElement = document.getElementById('loading-msg');
-        if (loadingElement) loadingElement.remove();
-        
-        adicionarMensagem('bot', resposta);
-        return;
-    }
-    
-    // ============================================
     // CONVERSA NORMAL → GROQ (RESPEITA PROMPT!)
     // ============================================
+    
+    console.log('🔵🔵🔵 ROTA: GROQ (conversa normal) 🔵🔵🔵');
     
     const loadingDiv = document.createElement('div');
     loadingDiv.className = 'message bot';
@@ -810,47 +889,6 @@ function enviarComando() {
         adicionarMensagem('user', texto);
         executarComando(texto);
         document.getElementById('user-input').value = '';
-    }
-}
-
-// ============================================
-// ENVIAR ARQUIVO (IMAGEM OU PDF)
-// ============================================
-
-function enviarArquivo(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    
-    const reader = new FileReader();
-    
-    if (file.type.startsWith('image/')) {
-        reader.onload = function(e) {
-            imagemBase64 = e.target.result;
-            adicionarMensagem('user', '📸 Enviou uma imagem', { type: 'image', data: imagemBase64 });
-            adicionarMensagem('bot', 'Senhor, imagem recebida! O que você quer saber sobre ela?');
-            document.getElementById('fileInput').value = '';
-        };
-        reader.readAsDataURL(file);
-    } else if (file.type === 'application/pdf') {
-        reader.onload = async function(e) {
-            try {
-                const pdfData = new Uint8Array(e.target.result);
-                const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
-                let textoCompleto = '';
-                for (let i = 1; i <= pdf.numPages; i++) {
-                    const page = await pdf.getPage(i);
-                    const content = await page.getTextContent();
-                    textoCompleto += content.items.map(item => item.str).join(' ') + '\n';
-                }
-                pdfTexto = textoCompleto;
-                adicionarMensagem('user', `📄 Enviou PDF: ${file.name}`, { type: 'pdf', name: file.name, size: file.size });
-                adicionarMensagem('bot', `Senhor, PDF "${file.name}" processado! ${pdf.numPages} páginas lidas.\n\nFaça perguntas sobre o conteúdo.`);
-                document.getElementById('fileInput').value = '';
-            } catch (error) {
-                adicionarMensagem('bot', `Senhor, erro ao ler PDF: ${error.message}`);
-            }
-        };
-        reader.readAsArrayBuffer(file);
     }
 }
 
@@ -933,4 +971,8 @@ if ('Notification' in window && Notification.permission === 'default') {
     Notification.requestPermission();
 }
 
-console.log('⚡ J.A.R.V.I.S. v6.0 iniciado com GROQ (conversas) + MISTRAL (imagens)!');
+console.log('⚡⚡⚡ J.A.R.V.I.S. v6.0 iniciado! ⚡⚡⚡');
+console.log('🔵 GROQ para conversas (chama de "Senhor")');
+console.log('🟢 MISTRAL para imagens e PDFs');
+console.log('📸 Câmera com detecção de movimento');
+console.log('========================================');
