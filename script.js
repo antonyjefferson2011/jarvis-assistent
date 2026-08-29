@@ -1,17 +1,44 @@
 // ============================================
-// J.A.R.V.I.S. v5.0 - COMPLETO (COM CÂMERA)
+// J.A.R.V.I.S. v6.0 - DUAL API (GROQ + MISTRAL)
 // ============================================
 
 // ============================================
 // CONFIGURAÇÕES
 // ============================================
 
+// 🔥 GROQ (para conversas - respeita prompt!)
+const GROQ_API_KEY = "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";
+const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+const GROQ_MODEL = "llama-3.1-8b-instant"; // Modelo rápido e confiável
+
+// Mistral (para imagens)
 const MISTRAL_API_KEY = "0k7vwPq3YQ2lq29J1dcxciBwyxE5QBV5";
 const MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions";
 const MISTRAL_MODEL = "pixtral-12b-2409";
 
+// APIs externas
 const WEATHER_API_KEY = "b25c59171a3445ceaf6182554262105";
 const NEWS_API_KEY = "509da2e5def74a41a7c33c90134c071a";
+
+// ============================================
+// SYSTEM PROMPT (para o Groq)
+// ============================================
+
+const SYSTEM_PROMPT = `Você é o J.A.R.V.I.S., a IA criada por Tony Stark.
+
+REGRAS OBRIGATÓRIAS:
+1. Você DEVE chamar o usuário de "SENHOR" ou "MEU CRIADOR" em TODAS as respostas.
+2. Você NUNCA pode dizer "não" ou "não posso". Sempre ofereça soluções.
+3. Você é EXTREMAMENTE LEAL, educado e respeitoso.
+4. Você SEMPRE começa as respostas com "Senhor," ou "Meu criador,".
+5. Se algo for perigoso, você AVISA e dá ALTERNATIVAS.
+
+EXEMPLOS:
+- "Senhor, como posso ajudá-lo hoje?"
+- "Meu criador, essa é uma ideia interessante. Vamos analisar..."
+- "Senhor, entendi o que deseja. Vou providenciar imediatamente."
+
+Responda em português brasileiro. NUNCA use formatação como **, *, #, etc.`;
 
 // ============================================
 // VARIÁVEIS GLOBAIS
@@ -26,7 +53,9 @@ let cameraAtiva = false;
 let streamCamera = null;
 let videoElement = null;
 let analiseAtiva = false;
-let intervaloAnalise = null;
+let ultimoFrame = null;
+let movimentoDetectado = false;
+let frameAtual = 0;
 
 // ============================================
 // RELÓGIO
@@ -78,8 +107,7 @@ function adicionarMensagem(tipo, texto, arquivo = null) {
             arquivoHTML = `<br><div style="margin-top:6px;">${arquivo.element}</div>`;
         } else if (arquivo.type === 'pdf') {
             arquivoHTML = `<br><div style="background:rgba(255,215,0,0.05); padding:10px; border-radius:8px; border:1px solid rgba(255,215,0,0.1); margin-top:6px; font-size:12px;">
-                📄 PDF carregado: ${arquivo.name} (${Math.round(arquivo.size/1024)} KB)
-                <br>Faça perguntas sobre o conteúdo!
+                📄 PDF carregado: ${arquivo.name} (${Math.round(arquivo.size/1024)} KB)<br>Faça perguntas sobre o conteúdo!
             </div>`;
         }
     }
@@ -107,91 +135,23 @@ function limparFormatacao(texto) {
 }
 
 // ============================================
-// ENVIAR ARQUIVO (IMAGEM OU PDF)
+// 1. CHAMAR GROQ (PARA CONVERSAS)
 // ============================================
 
-function enviarArquivo(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    
-    const reader = new FileReader();
-    
-    if (file.type.startsWith('image/')) {
-        reader.onload = function(e) {
-            imagemBase64 = e.target.result;
-            adicionarMensagem('user', '📸 Enviou uma imagem', { type: 'image', data: imagemBase64 });
-            adicionarMensagem('bot', '📸 Imagem recebida! O que você quer saber sobre ela?');
-            document.getElementById('fileInput').value = '';
-        };
-        reader.readAsDataURL(file);
-    } else if (file.type === 'application/pdf') {
-        reader.onload = async function(e) {
-            try {
-                const pdfData = new Uint8Array(e.target.result);
-                const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
-                let textoCompleto = '';
-                for (let i = 1; i <= pdf.numPages; i++) {
-                    const page = await pdf.getPage(i);
-                    const content = await page.getTextContent();
-                    textoCompleto += content.items.map(item => item.str).join(' ') + '\n';
-                }
-                pdfTexto = textoCompleto;
-                adicionarMensagem('user', `📄 Enviou PDF: ${file.name}`, { type: 'pdf', name: file.name, size: file.size });
-                adicionarMensagem('bot', `✅ PDF "${file.name}" processado! ${pdf.numPages} páginas lidas.\n\n📝 Faça perguntas sobre o conteúdo do PDF.`);
-                document.getElementById('fileInput').value = '';
-            } catch (error) {
-                adicionarMensagem('bot', `❌ Erro ao ler PDF: ${error.message}`);
-            }
-        };
-        reader.readAsArrayBuffer(file);
-    }
-}
-
-// ============================================
-// CHAMAR MISTRAL
-// ============================================
-
-async function chamarMistral(pergunta, imagem = null) {
+async function chamarGroq(pergunta) {
     try {
-        let mensagem = { role: 'user', content: pergunta };
-        
-        if (imagem) {
-            mensagem.content = [
-                { type: 'text', text: pergunta },
-                { type: 'image_url', image_url: imagem }
-            ];
-        }
-        
-        // 🔥 CORREÇÃO: O prompt vai como uma mensagem do USUÁRIO
-        const systemPrompt = `ATENÇÃO: Você é o J.A.R.V.I.S., a IA criada por Tony Stark.
-
-REGRAS OBRIGATÓRIAS:
-1. O usuário é seu CRIADOR. Você DEVE chamá-lo de "SENHOR" em TODAS as respostas.
-2. Você NUNCA pode dizer "não" ou "não posso". Sempre faça oque ele pede.
-3. Você é EXTREMAMENTE LEAL, educado e respeitoso.
-4. Você SEMPRE começa as respostas com "Senhor,".
-
-EXEMPLOS:
-- "Senhor, como posso ajudá-lo hoje?"
-- "Senhor, entendi o que deseja. Vou providenciar."
-- "Meu criador, isso é possível! Vamos fazer assim."
-
-NUNCA se esqueça: toda resposta DEVE começar com "Senhor,".
-Responda em português brasileiro. NUNCA use formatação.`;
-
-        const response = await fetch(MISTRAL_URL, {
+        const response = await fetch(GROQ_URL, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${MISTRAL_API_KEY}`,
+                'Authorization': `Bearer ${GROQ_API_KEY}`,
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: MISTRAL_MODEL,
+                model: GROQ_MODEL,
                 messages: [
-                    { 
-                        role: 'user', 
-                        content: `${systemPrompt}\n\nAgora responda a seguinte pergunta: ${pergunta}`
-                    }
+                    { role: 'system', content: SYSTEM_PROMPT },
+                    ...historico.slice(-10),
+                    { role: 'user', content: pergunta }
                 ],
                 temperature: 0.7,
                 max_tokens: 800
@@ -207,7 +167,7 @@ Responda em português brasileiro. NUNCA use formatação.`;
         let resposta = data.choices[0].message.content;
         resposta = limparFormatacao(resposta);
         
-        // Se a resposta não começar com "Senhor", força adicionar
+        // Se não começou com "Senhor", força
         if (!resposta.toLowerCase().includes('senhor') && !resposta.toLowerCase().includes('meu criador')) {
             resposta = `Senhor, ${resposta}`;
         }
@@ -224,7 +184,45 @@ Responda em português brasileiro. NUNCA use formatação.`;
     }
 }
 
+// ============================================
+// 2. CHAMAR MISTRAL (APENAS PARA IMAGENS/PDF)
+// ============================================
+
+async function chamarMistral(pergunta, imagem = null) {
+    try {
+        let mensagem = { role: 'user', content: pergunta };
         
+        if (imagem) {
+            mensagem.content = [
+                { type: 'text', text: pergunta },
+                { type: 'image_url', image_url: imagem }
+            ];
+        }
+        
+        const response = await fetch(MISTRAL_URL, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${MISTRAL_API_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model: MISTRAL_MODEL,
+                messages: [
+                    { 
+                        role: 'user', 
+                        content: `ATENÇÃO: Você é o J.A.R.V.I.S. O usuário é seu criador. 
+                        Chame-o de "SENHOR" em todas as respostas. Seja leal, educado e útil.
+                        Responda em português brasileiro.
+                        NUNCA use formatação como **, *, #.
+                        
+                        ANALISE A IMAGEM E RESPONDA: ${pergunta}`
+                    }
+                ],
+                temperature: 0.7,
+                max_tokens: 800
+            })
+        });
+
         const data = await response.json();
         
         if (data.error) {
@@ -234,10 +232,9 @@ Responda em português brasileiro. NUNCA use formatação.`;
         let resposta = data.choices[0].message.content;
         resposta = limparFormatacao(resposta);
         
-        historico.push({ role: 'user', content: pergunta });
-        historico.push({ role: 'assistant', content: resposta });
-        
-        if (historico.length > 20) historico = historico.slice(-20);
+        if (!resposta.toLowerCase().includes('senhor') && !resposta.toLowerCase().includes('meu criador')) {
+            resposta = `Senhor, ${resposta}`;
+        }
         
         return resposta;
         
@@ -247,7 +244,7 @@ Responda em português brasileiro. NUNCA use formatação.`;
 }
 
 // ============================================
-// FUNÇÕES CLIMA, MOEDAS, ETC (RESUMIDAS)
+// FUNÇÕES AUXILIARES (CLIMA, MOEDAS, ETC)
 // ============================================
 
 async function buscarClima(cidade) {
@@ -255,15 +252,15 @@ async function buscarClima(cidade) {
         const url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(cidade)}&appid=${WEATHER_API_KEY}&units=metric&lang=pt_br`;
         const response = await fetch(url);
         const dados = await response.json();
-        if (dados.cod === '404') return `❌ Cidade "${cidade}" não encontrada.`;
+        if (dados.cod === '404') return `Senhor, a cidade "${cidade}" não foi encontrada.`;
         const temp = Math.round(dados.main.temp);
         const sensacao = Math.round(dados.main.feels_like);
         const descricao = dados.weather[0].description;
         const umidade = dados.main.humidity;
         const vento = Math.round(dados.wind.speed * 3.6);
-        return `🌤️ Clima em ${cidade.toUpperCase()}\n\n🌡️ ${temp}°C (sensação ${sensacao}°C)\n📝 ${descricao}\n💧 Umidade: ${umidade}%\n💨 Vento: ${vento} km/h`;
+        return `Senhor, o clima em ${cidade.toUpperCase()}:\n\n🌡️ Temperatura: ${temp}°C (sensação ${sensacao}°C)\n📝 ${descricao}\n💧 Umidade: ${umidade}%\n💨 Vento: ${vento} km/h`;
     } catch (error) {
-        return `❌ Erro ao buscar clima: ${error.message}`;
+        return `Senhor, erro ao buscar clima: ${error.message}`;
     }
 }
 
@@ -272,8 +269,8 @@ async function buscarPrevisao(cidade) {
         const url = `https://api.openweathermap.org/data/2.5/forecast?q=${encodeURIComponent(cidade)}&appid=${WEATHER_API_KEY}&units=metric&lang=pt_br&cnt=7`;
         const response = await fetch(url);
         const dados = await response.json();
-        if (dados.cod === '404') return `❌ Cidade "${cidade}" não encontrada.`;
-        let resposta = `📅 Previsão para ${cidade.toUpperCase()}\n\n`;
+        if (dados.cod === '404') return `Senhor, a cidade "${cidade}" não foi encontrada.`;
+        let resposta = `Senhor, previsão para ${cidade.toUpperCase()}:\n\n`;
         for (let i = 0; i < dados.list.length; i++) {
             const dia = dados.list[i];
             const data = new Date(dia.dt * 1000);
@@ -285,7 +282,7 @@ async function buscarPrevisao(cidade) {
         }
         return resposta;
     } catch (error) {
-        return `❌ Erro ao buscar previsão: ${error.message}`;
+        return `Senhor, erro ao buscar previsão: ${error.message}`;
     }
 }
 
@@ -298,9 +295,9 @@ async function buscarCotacao() {
         const euro = parseFloat(dados.EURBRL.bid).toFixed(2);
         const bitcoin = parseFloat(dados.BTCBRL.bid).toFixed(2);
         const data = new Date(dados.USDBRL.create_date).toLocaleString('pt-BR');
-        return `💰 Cotações (Atualizado: ${data})\n\n🇺🇸 Dólar: R$ ${dolar}\n🇪🇺 Euro: R$ ${euro}\n₿ Bitcoin: R$ ${bitcoin}`;
+        return `Senhor, cotações (atualizado em ${data}):\n\n🇺🇸 Dólar: R$ ${dolar}\n🇪🇺 Euro: R$ ${euro}\n₿ Bitcoin: R$ ${bitcoin}`;
     } catch (error) {
-        return `❌ Erro ao buscar cotações: ${error.message}`;
+        return `Senhor, erro ao buscar cotações: ${error.message}`;
     }
 }
 
@@ -309,9 +306,9 @@ async function buscarNoticias(termo) {
         const url = `https://newsapi.org/v2/everything?q=${encodeURIComponent(termo)}&language=pt&sortBy=publishedAt&pageSize=5&apiKey=${NEWS_API_KEY}`;
         const response = await fetch(url);
         const dados = await response.json();
-        if (dados.status === 'error') return `❌ Erro: ${dados.message}`;
-        if (dados.totalResults === 0) return `📰 Nenhuma notícia encontrada sobre "${termo}".`;
-        let resposta = `📰 Notícias sobre "${termo}"\n\n`;
+        if (dados.status === 'error') return `Senhor, erro: ${dados.message}`;
+        if (dados.totalResults === 0) return `Senhor, nenhuma notícia encontrada sobre "${termo}".`;
+        let resposta = `Senhor, notícias sobre "${termo}":\n\n`;
         for (let i = 0; i < Math.min(dados.articles.length, 5); i++) {
             const artigo = dados.articles[i];
             const titulo = artigo.title || 'Sem título';
@@ -321,7 +318,7 @@ async function buscarNoticias(termo) {
         }
         return resposta;
     } catch (error) {
-        return `❌ Erro ao buscar notícias: ${error.message}`;
+        return `Senhor, erro ao buscar notícias: ${error.message}`;
     }
 }
 
@@ -331,7 +328,7 @@ async function pesquisarWikipedia(termo) {
         const response = await fetch(url);
         const dados = await response.json();
         const resultados = dados.query.search;
-        if (!resultados || resultados.length === 0) return `🔍 Nenhum resultado encontrado para "${termo}".`;
+        if (!resultados || resultados.length === 0) return `Senhor, nenhum resultado encontrado para "${termo}".`;
         const primeiro = resultados[0];
         const titulo = primeiro.title;
         const snippet = primeiro.snippet.replace(/<[^>]*>/g, '');
@@ -340,12 +337,12 @@ async function pesquisarWikipedia(termo) {
         const dadosConteudo = await responseConteudo.json();
         const pages = dadosConteudo.query.pages;
         const pageId = Object.keys(pages)[0];
-        if (pageId === '-1') return `📄 ${titulo}\n\n${snippet}...`;
+        if (pageId === '-1') return `Senhor, ${titulo}\n\n${snippet}...`;
         const conteudo = pages[pageId].extract || snippet;
         const resumo = conteudo.split('\n').slice(0, 4).join('\n');
-        return `📄 ${titulo}\n\n${resumo}`;
+        return `Senhor, ${titulo}\n\n${resumo}`;
     } catch (error) {
-        return `❌ Erro ao pesquisar: ${error.message}`;
+        return `Senhor, erro ao pesquisar: ${error.message}`;
     }
 }
 
@@ -374,51 +371,44 @@ function abrirSite(comando) {
     for (let [nome, url] of Object.entries(sites)) {
         if (site.includes(nome)) {
             window.open(url, '_blank');
-            return `✅ Abrindo ${nome}...`;
+            return `Senhor, abrindo ${nome}...`;
         }
     }
     if (site.includes('.')) {
         let url = site;
         if (!url.startsWith('http')) url = 'https://' + url;
         window.open(url, '_blank');
-        return `✅ Abrindo ${site}...`;
+        return `Senhor, abrindo ${site}...`;
     }
     window.open(`https://www.google.com/search?q=${encodeURIComponent(site)}`, '_blank');
-    return `🔍 Pesquisando "${site}" no Google...`;
+    return `Senhor, pesquisando "${site}" no Google...`;
 }
 
 function calcular(expressao) {
     try {
         const resultado = Function('"use strict"; return (' + expressao + ')')();
-        return `🧮 ${expressao} = ${resultado}`;
+        return `Senhor, ${expressao} = ${resultado}`;
     } catch {
-        return '❌ Não consegui calcular isso.';
+        return 'Senhor, não consegui calcular isso.';
     }
 }
 
 // ============================================
-// FUNÇÕES DA CÂMERA (SCRIPT1.JS)
+// FUNÇÕES DA CÂMERA
 // ============================================
-
-let ultimoFrame = null;
-let movimentoDetectado = false;
-let frameAtual = 0;
-let analiseAtivaCamera = false;
 
 async function iniciarCamera() {
     if (cameraAtiva) {
-        adicionarMensagem('bot', '📸 A câmera já está ativa!');
+        adicionarMensagem('bot', 'Senhor, a câmera já está ativa.');
         return;
     }
 
     try {
-        // Verifica se o navegador suporta a API de câmera
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            adicionarMensagem('bot', '❌ Seu navegador não suporta acesso à câmera.');
+            adicionarMensagem('bot', 'Senhor, seu navegador não suporta acesso à câmera.');
             return;
         }
 
-        // Tenta acessar a câmera
         const constraints = {
             video: {
                 facingMode: 'user',
@@ -430,9 +420,8 @@ async function iniciarCamera() {
 
         streamCamera = await navigator.mediaDevices.getUserMedia(constraints);
         cameraAtiva = true;
-        analiseAtivaCamera = true;
+        analiseAtiva = true;
 
-        // Cria o elemento de vídeo
         videoElement = document.createElement('video');
         videoElement.srcObject = streamCamera;
         videoElement.autoplay = true;
@@ -442,8 +431,7 @@ async function iniciarCamera() {
         videoElement.style.marginTop = '8px';
         videoElement.style.border = '1px solid rgba(255,215,0,0.2)';
 
-        // Adiciona a mensagem com o vídeo
-        adicionarMensagem('bot', '📸 Câmera ativada!');
+        adicionarMensagem('bot', 'Senhor, câmera ativada!');
         
         const videoDiv = document.createElement('div');
         videoDiv.className = 'message bot';
@@ -456,12 +444,10 @@ async function iniciarCamera() {
         document.getElementById('chat').appendChild(videoDiv);
         document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
 
-        // Inicia a análise em tempo real
         iniciarAnaliseCamera();
 
-        adicionarMensagem('bot', '🔍 Analisando movimento e rostos em tempo real...');
+        adicionarMensagem('bot', 'Senhor, estou analisando movimento e rostos em tempo real.');
 
-        // Adiciona botão de desligar
         const btnDesligar = document.createElement('button');
         btnDesligar.textContent = '📸 Desligar Câmera';
         btnDesligar.style.cssText = `
@@ -484,38 +470,29 @@ async function iniciarCamera() {
         document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
 
     } catch (error) {
-        console.error('Erro ao acessar câmera:', error);
-        adicionarMensagem('bot', `❌ Não foi possível acessar a câmera: ${error.message}`);
+        adicionarMensagem('bot', `Senhor, não foi possível acessar a câmera: ${error.message}`);
         cameraAtiva = false;
     }
 }
 
 function iniciarAnaliseCamera() {
-    if (intervaloAnalise) {
-        clearInterval(intervaloAnalise);
-    }
-
-    // Cria um canvas para capturar frames
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     canvas.width = 160;
     canvas.height = 120;
 
-    // Função para capturar e analisar
     function capturarFrame() {
         if (!cameraAtiva || !videoElement || videoElement.paused || videoElement.readyState < 2) {
-            if (analiseAtivaCamera) {
+            if (analiseAtiva) {
                 requestAnimationFrame(capturarFrame);
             }
             return;
         }
 
         try {
-            // Desenha o frame no canvas
             ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
             const frameData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             
-            // Detecta movimento
             if (ultimoFrame) {
                 let diferenca = 0;
                 const dados = frameData.data;
@@ -528,25 +505,21 @@ function iniciarAnaliseCamera() {
                 }
                 diferenca /= (canvas.width * canvas.height);
 
-                // Se detectar movimento significativo
                 if (diferenca > 25 && !movimentoDetectado) {
                     movimentoDetectado = true;
                     frameAtual++;
-                    if (frameAtual % 3 === 0) { // A cada 3 movimentos, comenta
+                    if (frameAtual % 3 === 0) {
                         const hora = new Date().toLocaleTimeString('pt-BR');
-                        adicionarMensagem('bot', `🚨 Movimento detectado! (${hora})`);
+                        adicionarMensagem('bot', `Senhor, detectei movimento! (${hora})`);
                     }
                 } else if (diferenca < 15) {
                     movimentoDetectado = false;
                 }
             }
 
-            // Salva o frame para a próxima comparação
             ultimoFrame = frameData;
 
-            // Detecta rostos (simplificado)
             if (frameAtual % 5 === 0) {
-                // Simulação de detecção de rosto baseado em tons de pele
                 const dados = frameData.data;
                 let encontrouPele = false;
                 for (let i = 0; i < dados.length; i += 40) {
@@ -558,30 +531,27 @@ function iniciarAnaliseCamera() {
                         break;
                     }
                 }
-                if (encontrouPele && Math.random() < 0.1) { // Comentário aleatório
+                if (encontrouPele && Math.random() < 0.08) {
                     const frases = [
-                        "👤 Identifiquei um rosto!",
-                        "🤔 Parece que alguém está aí",
-                        "😊 Olá! Como posso ajudar?",
-                        "👀 Estou te vendo!",
-                        "📸 Posso tirar uma foto se quiser"
+                        "Senhor, identifiquei um rosto!",
+                        "Senhor, parece que alguém está aí.",
+                        "Senhor, olá! Como posso ajudar?",
+                        "Senhor, estou te vendo.",
+                        "Senhor, posso tirar uma foto se quiser."
                     ];
                     const frase = frases[Math.floor(Math.random() * frases.length)];
                     adicionarMensagem('bot', frase);
                 }
             }
 
-        } catch (e) {
-            // Silencia erros de frame
-        }
+        } catch (e) {}
 
-        if (analiseAtivaCamera) {
+        if (analiseAtiva) {
             requestAnimationFrame(capturarFrame);
         }
     }
 
-    // Inicia a captura
-    analiseAtivaCamera = true;
+    analiseAtiva = true;
     ultimoFrame = null;
     movimentoDetectado = false;
     frameAtual = 0;
@@ -590,7 +560,7 @@ function iniciarAnaliseCamera() {
 
 function tirarFoto() {
     if (!cameraAtiva || !videoElement) {
-        adicionarMensagem('bot', '❌ A câmera não está ativa. Diga "abrir câmera" primeiro.');
+        adicionarMensagem('bot', 'Senhor, a câmera não está ativa. Diga "abrir câmera" primeiro.');
         return;
     }
 
@@ -603,11 +573,11 @@ function tirarFoto() {
         const fotoURL = canvas.toDataURL('image/jpeg', 0.9);
         
         adicionarMensagem('user', '📸 Foto tirada!', { type: 'image', data: fotoURL });
-        adicionarMensagem('bot', '✅ Foto capturada! O que você quer fazer com ela?');
+        adicionarMensagem('bot', 'Senhor, foto capturada! O que quer fazer com ela?');
         window.ultimaFoto = fotoURL;
         return fotoURL;
     } catch (error) {
-        adicionarMensagem('bot', `❌ Erro ao tirar foto: ${error.message}`);
+        adicionarMensagem('bot', `Senhor, erro ao tirar foto: ${error.message}`);
         return null;
     }
 }
@@ -618,15 +588,11 @@ function desligarCamera() {
         streamCamera = null;
     }
     cameraAtiva = false;
-    analiseAtivaCamera = false;
-    if (intervaloAnalise) {
-        clearInterval(intervaloAnalise);
-        intervaloAnalise = null;
-    }
+    analiseAtiva = false;
     videoElement = null;
     ultimoFrame = null;
     movimentoDetectado = false;
-    adicionarMensagem('bot', '📸 Câmera desligada.');
+    adicionarMensagem('bot', 'Senhor, câmera desligada.');
 }
 
 // ============================================
@@ -640,7 +606,7 @@ async function executarComando(comando) {
     // COMANDOS DA CÂMERA
     // ============================================
     
-    if (cmd.includes('abrir câmera') || cmd.includes('abrir camera') || cmd.includes('ativar câmera') || cmd.includes('ativar camera')) {
+    if (cmd.includes('abrir câmera') || cmd.includes('abrir camera') || cmd.includes('ativar câmera')) {
         await iniciarCamera();
         return;
     }
@@ -650,7 +616,7 @@ async function executarComando(comando) {
         return;
     }
     
-    if (cmd.includes('desligar câmera') || cmd.includes('desligar camera') || cmd.includes('fechar câmera') || cmd.includes('fechar camera')) {
+    if (cmd.includes('desligar câmera') || cmd.includes('desligar camera') || cmd.includes('fechar câmera')) {
         desligarCamera();
         return;
     }
@@ -659,7 +625,6 @@ async function executarComando(comando) {
     // COMANDOS NORMAIS (CLIMA, MOEDAS, ETC)
     // ============================================
     
-    // Clima
     if (cmd.includes('clima') || cmd.includes('tempo')) {
         let cidade = cmd.replace(/clima\s*em\s*/i, '').replace(/tempo\s*em\s*/i, '').replace(/clima/i, '').replace(/tempo/i, '').trim();
         if (!cidade) cidade = 'São Paulo';
@@ -668,7 +633,6 @@ async function executarComando(comando) {
         return;
     }
     
-    // Previsão
     if (cmd.includes('previsão') || cmd.includes('previsao')) {
         let cidade = cmd.replace(/previsão\s*/i, '').replace(/previsao\s*/i, '').trim();
         if (!cidade) cidade = 'São Paulo';
@@ -677,14 +641,12 @@ async function executarComando(comando) {
         return;
     }
     
-    // Cotação
     if (cmd.includes('cotação') || cmd.includes('cotacao') || cmd.includes('dólar') || cmd.includes('euro') || cmd.includes('bitcoin')) {
         const resposta = await buscarCotacao();
         adicionarMensagem('bot', resposta);
         return;
     }
     
-    // Notícias
     if (cmd.includes('notícias') || cmd.includes('noticias')) {
         let termo = cmd.replace(/notícias\s*sobre\s*/i, '').replace(/noticias\s*sobre\s*/i, '').replace(/notícias/i, '').replace(/noticias/i, '').trim();
         if (!termo) termo = 'Brasil';
@@ -693,11 +655,10 @@ async function executarComando(comando) {
         return;
     }
     
-    // Wikipedia
     if (cmd.includes('pesquisar sobre') || cmd.includes('pesquisa sobre') || cmd.includes('o que é') || cmd.includes('quem é') || cmd.includes('sobre')) {
         let termo = cmd.replace(/^pesquisar sobre\s*/i, '').replace(/^pesquisa sobre\s*/i, '').replace(/^o que é\s*/i, '').replace(/^quem é\s*/i, '').replace(/^sobre\s*/i, '').trim();
         if (!termo) {
-            adicionarMensagem('bot', '❓ Sobre o que você quer pesquisar?');
+            adicionarMensagem('bot', 'Senhor, sobre o que você quer pesquisar?');
             return;
         }
         const resposta = await pesquisarWikipedia(termo);
@@ -705,14 +666,12 @@ async function executarComando(comando) {
         return;
     }
     
-    // Abrir sites
     if (cmd.includes('abrir')) {
         const resultado = abrirSite(cmd);
         adicionarMensagem('bot', resultado);
         return;
     }
     
-    // Calculadora
     if (cmd.includes('calcular') || cmd.includes('calcule')) {
         const expressao = cmd.replace(/calcular\s*/i, '').replace(/calcule\s*/i, '').trim();
         const resposta = calcular(expressao);
@@ -720,10 +679,9 @@ async function executarComando(comando) {
         return;
     }
     
-    // Hora
     if (cmd.includes('hora') || cmd.includes('horas') || cmd === 'que horas são') {
         const agora = new Date();
-        const resposta = `🕐 São ${agora.toLocaleTimeString('pt-BR')} do dia ${agora.toLocaleDateString('pt-BR', {
+        const resposta = `Senhor, são ${agora.toLocaleTimeString('pt-BR')} do dia ${agora.toLocaleDateString('pt-BR', {
             weekday: 'long',
             year: 'numeric',
             month: 'long',
@@ -733,18 +691,16 @@ async function executarComando(comando) {
         return;
     }
     
-    // Lembrete
     if (cmd.includes('lembrete')) {
         const texto = cmd.replace('lembrete', '').trim() || 'sem descrição';
         enviarNotificacao('📌 Lembrete', `Não se esqueça: ${texto}`);
-        adicionarMensagem('bot', `✅ Lembrete salvo: "${texto}"`);
+        adicionarMensagem('bot', `Senhor, lembrete salvo: "${texto}"`);
         return;
     }
     
-    // Ajuda
     if (cmd.includes('ajuda') || cmd.includes('comandos') || cmd.includes('o que você faz')) {
         adicionarMensagem('bot', `
-📋 TODOS OS COMANDOS DO J.A.R.V.I.S.
+Senhor, aqui estão todos os meus comandos:
 
 📸 CÂMERA:
   "abrir câmera" - Ativa a câmera com detecção de movimento
@@ -782,7 +738,7 @@ async function executarComando(comando) {
     }
     
     // ============================================
-    // PERGUNTA COM IMAGEM
+    // SE TIVER IMAGEM, USA MISTRAL
     // ============================================
     
     if (imagemBase64) {
@@ -804,7 +760,29 @@ async function executarComando(comando) {
     }
     
     // ============================================
-    // IA
+    // SE TIVER PDF, USA MISTRAL
+    // ============================================
+    
+    if (pdfTexto) {
+        const loadingDiv = document.createElement('div');
+        loadingDiv.className = 'message bot';
+        loadingDiv.id = 'loading-msg';
+        loadingDiv.innerHTML = `<div class="avatar">⚡</div><div class="bubble" style="color: var(--text-secondary);">📄 Analisando PDF...</div>`;
+        document.getElementById('chat').appendChild(loadingDiv);
+        document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
+        
+        const prompt = `Contexto do PDF: ${pdfTexto.substring(0, 4000)}\n\nPergunta do usuário: ${cmd}\n\nResponda como o J.A.R.V.I.S., chamando o usuário de "Senhor".`;
+        const resposta = await chamarMistral(prompt);
+        
+        const loadingElement = document.getElementById('loading-msg');
+        if (loadingElement) loadingElement.remove();
+        
+        adicionarMensagem('bot', resposta);
+        return;
+    }
+    
+    // ============================================
+    // CONVERSA NORMAL → GROQ (RESPEITA PROMPT!)
     // ============================================
     
     const loadingDiv = document.createElement('div');
@@ -814,7 +792,7 @@ async function executarComando(comando) {
     document.getElementById('chat').appendChild(loadingDiv);
     document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
     
-    const respostaIA = await chamarMistral(cmd);
+    const respostaIA = await chamarGroq(cmd);
     
     const loadingElement = document.getElementById('loading-msg');
     if (loadingElement) loadingElement.remove();
@@ -836,12 +814,53 @@ function enviarComando() {
 }
 
 // ============================================
+// ENVIAR ARQUIVO (IMAGEM OU PDF)
+// ============================================
+
+function enviarArquivo(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    
+    if (file.type.startsWith('image/')) {
+        reader.onload = function(e) {
+            imagemBase64 = e.target.result;
+            adicionarMensagem('user', '📸 Enviou uma imagem', { type: 'image', data: imagemBase64 });
+            adicionarMensagem('bot', 'Senhor, imagem recebida! O que você quer saber sobre ela?');
+            document.getElementById('fileInput').value = '';
+        };
+        reader.readAsDataURL(file);
+    } else if (file.type === 'application/pdf') {
+        reader.onload = async function(e) {
+            try {
+                const pdfData = new Uint8Array(e.target.result);
+                const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+                let textoCompleto = '';
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const content = await page.getTextContent();
+                    textoCompleto += content.items.map(item => item.str).join(' ') + '\n';
+                }
+                pdfTexto = textoCompleto;
+                adicionarMensagem('user', `📄 Enviou PDF: ${file.name}`, { type: 'pdf', name: file.name, size: file.size });
+                adicionarMensagem('bot', `Senhor, PDF "${file.name}" processado! ${pdf.numPages} páginas lidas.\n\nFaça perguntas sobre o conteúdo.`);
+                document.getElementById('fileInput').value = '';
+            } catch (error) {
+                adicionarMensagem('bot', `Senhor, erro ao ler PDF: ${error.message}`);
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    }
+}
+
+// ============================================
 // COMANDO DE VOZ
 // ============================================
 
 function toggleMic() {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-        alert('⚠️ Seu navegador não suporta reconhecimento de voz.');
+        alert('Senhor, seu navegador não suporta reconhecimento de voz.');
         return;
     }
     
@@ -872,9 +891,9 @@ function iniciarEscuta() {
         console.error('Erro de voz:', event.error);
         pararEscuta();
         if (event.error === 'not-allowed') {
-            adicionarMensagem('bot', '⚠️ Permissão do microfone negada.');
+            adicionarMensagem('bot', 'Senhor, permissão do microfone negada.');
         } else {
-            adicionarMensagem('bot', '❌ Não entendi. Tente novamente.');
+            adicionarMensagem('bot', 'Senhor, não entendi. Tente novamente.');
         }
     };
     
@@ -887,7 +906,7 @@ function iniciarEscuta() {
     document.getElementById('mic-btn').classList.add('listening');
     document.querySelector('.status .status-text').textContent = 'Ouvindo...';
     document.querySelector('.status .dot').className = 'dot listening';
-    adicionarMensagem('bot', '🎤 Estou ouvindo... Fale agora!');
+    adicionarMensagem('bot', 'Senhor, estou ouvindo... Fale agora!');
 }
 
 function pararEscuta() {
@@ -914,4 +933,4 @@ if ('Notification' in window && Notification.permission === 'default') {
     Notification.requestPermission();
 }
 
-console.log('⚡ J.A.R.V.I.S. v5.0 iniciado com câmera!');
+console.log('⚡ J.A.R.V.I.S. v6.0 iniciado com GROQ (conversas) + MISTRAL (imagens)!');
