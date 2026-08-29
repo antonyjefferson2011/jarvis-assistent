@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>J.A.R.V.I.S.</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="icon.png" type="image/png">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- ===== Cabeçalho ===== -->
+        <header>
+            <div class="logo">
+                <span class="icon">⚡</span>
+                <span class="title">J.A.R.V.I.S.</span>
+                <span class="version">v3.0</span>
+            </div>
+            <div class="status" id="status-indicator">
+                <span class="dot"></span>
+                <span class="status-text">Online</span>
+            </div>
+        </header>
+
+        <!-- ===== Linha de scanner (efeito tecnológico) ===== -->
+        <div class="scanner-line"></div>
+
+        <!-- ===== Relógio ===== -->
+        <div class="clock-section">
+            <div id="clock">00:00:00</div>
+            <div id="date">00/00/0000</div>
+        </div>
+
+        <!-- ===== Chat ===== -->
+        <div class="chat-section" id="chat">
+            <div class="message bot">
+                <div class="avatar">⚡</div>
+                <div class="bubble">
+                    <span class="greeting">▸ Sistema iniciado com sucesso.</span><br>
+                    ▸ Como posso auxiliá-lo hoje, senhor?
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== Comandos Rápidos ===== -->
+        <div class="quick-commands">
+            <button onclick="executarComando('hora')">⌚ Hora</button>
+            <button onclick="executarComando('pesquisar')">🔍 Pesquisar</button>
+            <button onclick="executarComando('abrir youtube')">▶️ YouTube</button>
+            <button onclick="executarComando('lembrete')">📌 Lembrete</button>
+            <button onclick="executarComando('ajuda')">⍟ Ajuda</button>
+        </div>
+
+        <!-- ===== Input ===== -->
+        <div class="input-section">
+            <button id="mic-btn" onclick="toggleMic()" title="Comando de voz">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 1C13.1046 1 14 1.89543 14 3V13C14 14.1046 13.1046 15 12 15C10.8954 15 10 14.1046 10 13V3C10 1.89543 10.8954 1 12 1Z"/>
+                    <path d="M19 10V13C19 16.866 15.866 20 12 20C8.13401 20 5 16.866 5 13V10"/>
+                    <path d="M12 20V23"/>
+                    <path d="M9 23H15"/>
+                </svg>
+            </button>
+            <input type="text" id="user-input" placeholder="▸ Digite um comando ou pergunta..." onkeypress="if(event.key==='Enter') enviarComando()" autofocus>
+            <button onclick="enviarComando()">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 2L11 13"/>
+                    <path d="M22 2L15 22L11 13L2 9L22 2Z"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
