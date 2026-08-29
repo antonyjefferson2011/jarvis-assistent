@@ -16,7 +16,7 @@
             <div class="logo">
                 <span class="icon">⚡</span>
                 <span class="title">J.A.R.V.I.S.</span>
-                <span class="version">v3.0</span>
+                <span class="version">v4.0</span>
             </div>
             <div class="status" id="status-indicator">
                 <span class="dot"></span>
@@ -24,7 +24,7 @@
             </div>
         </header>
 
-        <!-- ===== Linha de scanner (efeito tecnológico) ===== -->
+        <!-- ===== Scanner line ===== -->
         <div class="scanner-line"></div>
 
         <!-- ===== Relógio ===== -->
@@ -39,7 +39,7 @@
                 <div class="avatar">⚡</div>
                 <div class="bubble">
                     <span class="greeting">▸ Sistema iniciado com sucesso.</span><br>
-                    ▸ Como posso auxiliá-lo hoje, senhor?
+                    ▸ Agora com visão! Envie uma imagem ou me pergunte algo.
                 </div>
             </div>
         </div>
@@ -53,8 +53,18 @@
             <button onclick="executarComando('ajuda')">⍟ Ajuda</button>
         </div>
 
-        <!-- ===== Input ===== -->
+        <!-- ===== Input + Upload ===== -->
         <div class="input-section">
+            <!-- Botão de upload de imagem -->
+            <button id="upload-btn" onclick="document.getElementById('fileInput').click()" title="Enviar imagem">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                    <circle cx="8.5" cy="8.5" r="1.5"/>
+                    <polyline points="21 15 16 10 5 21"/>
+                </svg>
+            </button>
+            <input type="file" id="fileInput" accept="image/*" style="display:none" onchange="enviarImagem(event)">
+            
             <button id="mic-btn" onclick="toggleMic()" title="Comando de voz">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M12 1C13.1046 1 14 1.89543 14 3V13C14 14.1046 13.1046 15 12 15C10.8954 15 10 14.1046 10 13V3C10 1.89543 10.8954 1 12 1Z"/>
@@ -63,7 +73,9 @@
                     <path d="M9 23H15"/>
                 </svg>
             </button>
+            
             <input type="text" id="user-input" placeholder="▸ Digite um comando ou pergunta..." onkeypress="if(event.key==='Enter') enviarComando()" autofocus>
+            
             <button onclick="enviarComando()">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M22 2L11 13"/>
