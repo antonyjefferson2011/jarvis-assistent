@@ -8,19 +8,27 @@
     <link rel="manifest" href="manifest.json">
     <link rel="icon" href="icon.png" type="image/png">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <!-- Leaflet para Mapas -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- PDF.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body>
-    <div class="container">
+    <div class="container" id="app">
         <!-- ===== Cabeçalho ===== -->
         <header>
             <div class="logo">
                 <span class="icon">⚡</span>
                 <span class="title">J.A.R.V.I.S.</span>
-                <span class="version">v4.0</span>
+                <span class="version">v5.0</span>
             </div>
-            <div class="status" id="status-indicator">
-                <span class="dot"></span>
-                <span class="status-text">Online</span>
+            <div class="header-actions">
+                <button id="theme-toggle" onclick="toggleTheme()" title="Alternar tema">🌓</button>
+                <div class="status" id="status-indicator">
+                    <span class="dot"></span>
+                    <span class="status-text">Online</span>
+                </div>
             </div>
         </header>
 
@@ -33,13 +41,21 @@
             <div id="date">00/00/0000</div>
         </div>
 
+        <!-- ===== Estatísticas ===== -->
+        <div class="stats-bar" id="stats-bar">
+            <span id="msg-count">💬 0 mensagens</span>
+            <span id="session-time">⏱️ 0h 0m</span>
+            <span id="commands-used">⚡ 0 comandos</span>
+        </div>
+
         <!-- ===== Chat ===== -->
         <div class="chat-section" id="chat">
             <div class="message bot">
                 <div class="avatar">⚡</div>
                 <div class="bubble">
                     <span class="greeting">▸ Sistema iniciado com sucesso.</span><br>
-                    ▸ Agora com visão! Envie uma imagem ou me pergunte algo.
+                    ▸ Agora com Previsão do Tempo, Moedas, Mapas, PDF e Música!<br>
+                    ▸ Digite "ajuda" para ver todos os comandos.
                 </div>
             </div>
         </div>
@@ -47,23 +63,22 @@
         <!-- ===== Comandos Rápidos ===== -->
         <div class="quick-commands">
             <button onclick="executarComando('hora')">⌚ Hora</button>
-            <button onclick="executarComando('pesquisar')">🔍 Pesquisar</button>
-            <button onclick="executarComando('abrir youtube')">▶️ YouTube</button>
-            <button onclick="executarComando('lembrete')">📌 Lembrete</button>
+            <button onclick="executarComando('clima sp')">🌤️ Clima</button>
+            <button onclick="executarComando('cotação')">💰 Moedas</button>
+            <button onclick="executarComando('mapa')">🗺️ Mapa</button>
             <button onclick="executarComando('ajuda')">⍟ Ajuda</button>
         </div>
 
-        <!-- ===== Input + Upload ===== -->
+        <!-- ===== Input + Uploads ===== -->
         <div class="input-section">
-            <!-- Botão de upload de imagem -->
-            <button id="upload-btn" onclick="document.getElementById('fileInput').click()" title="Enviar imagem">
+            <button id="upload-btn" onclick="document.getElementById('fileInput').click()" title="Enviar imagem ou PDF">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
                     <circle cx="8.5" cy="8.5" r="1.5"/>
                     <polyline points="21 15 16 10 5 21"/>
                 </svg>
             </button>
-            <input type="file" id="fileInput" accept="image/*" style="display:none" onchange="enviarImagem(event)">
+            <input type="file" id="fileInput" accept="image/*,.pdf" style="display:none" onchange="enviarArquivo(event)">
             
             <button id="mic-btn" onclick="toggleMic()" title="Comando de voz">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -82,6 +97,15 @@
                     <path d="M22 2L15 22L11 13L2 9L22 2Z"/>
                 </svg>
             </button>
+        </div>
+
+        <!-- ===== Player de Música (oculto) ===== -->
+        <div id="music-player" style="display:none; margin-top: 8px; padding: 8px; background: rgba(255,215,0,0.05); border-radius: 8px; border: 1px solid rgba(255,215,0,0.1);">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span id="music-title" style="font-size:12px; color: var(--text-secondary);">▶️ Nenhuma música tocando</span>
+                <button onclick="fecharPlayer()" style="background:none; border:none; color:var(--text-secondary); cursor:pointer;">✕</button>
+            </div>
+            <div id="youtube-player"></div>
         </div>
     </div>
 
