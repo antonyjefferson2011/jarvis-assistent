@@ -1,5 +1,5 @@
 // ============================================
-// J.A.R.V.I.S. v5.0 - TUDO EM UM
+// J.A.R.V.I.S. v5.0 - COMPLETO
 // ============================================
 
 // ============================================
@@ -12,6 +12,34 @@ const MISTRAL_MODEL = "pixtral-12b-2409";
 
 const WEATHER_API_KEY = "b25c59171a3445ceaf6182554262105";
 const NEWS_API_KEY = "509da2e5def74a41a7c33c90134c071a";
+
+// ============================================
+// QUEM SOU EU (CONSCIÊNCIA DO J.A.R.V.I.S.)
+// ============================================
+
+const EU_SOU = `
+Eu sou o J.A.R.V.I.S. v5.0, um assistente pessoal criado em JavaScript puro.
+Minhas funcionalidades incluem:
+- Comandos de voz (reconhecimento de fala)
+- Visão computacional (análise de imagens)
+- Leitura de PDFs (extração de texto)
+- Previsão do tempo (7 dias)
+- Cotação de moedas (Dólar, Euro, Bitcoin)
+- Calculadora e conversor de unidades
+- Mapas interativos (Leaflet)
+- Música no YouTube
+- Pesquisa na Wikipedia
+- Notícias em tempo real
+- Abertura de sites
+- Lembretes com notificação
+- Exportação de conversas
+- Estatísticas de uso
+- Geração de código (Python, JS, HTML, CSS)
+- Modo claro/escuro
+
+Uso a API da Mistral com o modelo Pixtral para entender imagens e texto.
+Sou 100% gratuito e funciono diretamente no navegador.
+`;
 
 // ============================================
 // VARIÁVEIS GLOBAIS
@@ -27,6 +55,9 @@ let temaAtual = localStorage.getItem('jarvis-theme') || 'dark';
 let contadorMensagens = parseInt(localStorage.getItem('jarvis-msg-count')) || 0;
 let contadorComandos = parseInt(localStorage.getItem('jarvis-cmd-count')) || 0;
 let dataInicio = localStorage.getItem('jarvis-start-time') || Date.now();
+let ultimoCodigo = null;
+let ultimaLinguagem = 'python';
+let pdfTexto = null;
 
 // Elementos DOM
 const chat = document.getElementById('chat');
@@ -39,16 +70,12 @@ const micBtn = document.getElementById('mic-btn');
 // ============================================
 
 function inicializar() {
-    // Aplica tema salvo
     if (temaAtual === 'light') {
         document.body.classList.add('light-theme');
         document.getElementById('theme-toggle').textContent = '🌙';
     }
     
-    // Atualiza estatísticas
     atualizarStats();
-    
-    // Inicia contador de tempo
     setInterval(atualizarStats, 30000);
     
     console.log('⚡ J.A.R.V.I.S. v5.0 iniciado!');
@@ -56,7 +83,7 @@ function inicializar() {
 }
 
 // ============================================
-// RELÓGIO
+// RELÓGIO (CORRIGIDO)
 // ============================================
 
 function atualizarRelogio() {
@@ -161,7 +188,6 @@ function adicionarMensagem(tipo, texto, arquivo = null) {
     chat.scrollTop = chat.scrollHeight;
     
     if (tipo === 'user') incrementarMensagem();
-    if (tipo === 'bot') incrementarComando();
 }
 
 // ============================================
@@ -181,8 +207,6 @@ function limparFormatacao(texto) {
 // ============================================
 // ENVIAR ARQUIVO (IMAGEM OU PDF)
 // ============================================
-
-let pdfTexto = null;
 
 function enviarArquivo(event) {
     const file = event.target.files[0];
@@ -247,11 +271,12 @@ async function chamarMistral(pergunta, imagem = null) {
                 messages: [
                     { 
                         role: 'system', 
-                        content: `Você é o J.A.R.V.I.S., um assistente extremamente inteligente e útil. 
-                        Responda em português brasileiro. Seja conciso mas completo. 
-                        Você pode ver imagens, ler PDFs, abrir sites, buscar clima, moedas, e muito mais.
+                        content: `Você é o J.A.R.V.I.S. ${EU_SOU} 
+                        Responda em português brasileiro. Seja conciso mas completo.
                         NUNCA use formatação como **negrito**, *italico*, # cabecalhos, etc.
-                        Responda APENAS em texto puro, sem asteriscos ou caracteres especiais.` 
+                        Responda APENAS em texto puro, sem asteriscos ou caracteres especiais.
+                        Quando gerar código, retorne APENAS o código, sem explicações.
+                        Se for uma pergunta sobre o próprio J.A.R.V.I.S., use a descrição acima.` 
                     },
                     ...historico.slice(-5),
                     mensagem
@@ -283,9 +308,31 @@ async function chamarMistral(pergunta, imagem = null) {
 }
 
 // ============================================
-// 1. PREVISÃO DO TEMPO (7 DIAS)
+// FUNÇÕES AUXILIARES
 // ============================================
 
+// 1. CLIMA ATUAL
+async function buscarClima(cidade) {
+    try {
+        const url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(cidade)}&appid=${WEATHER_API_KEY}&units=metric&lang=pt_br`;
+        const response = await fetch(url);
+        const dados = await response.json();
+        
+        if (dados.cod === '404') return `❌ Cidade "${cidade}" não encontrada.`;
+        
+        const temp = Math.round(dados.main.temp);
+        const sensacao = Math.round(dados.main.feels_like);
+        const descricao = dados.weather[0].description;
+        const umidade = dados.main.humidity;
+        const vento = Math.round(dados.wind.speed * 3.6);
+        
+        return `🌤️ Clima em ${cidade.toUpperCase()}\n\n🌡️ Temperatura: ${temp}°C (sensação ${sensacao}°C)\n📝 ${descricao}\n💧 Umidade: ${umidade}%\n💨 Vento: ${vento} km/h`;
+    } catch (error) {
+        return `❌ Erro ao buscar clima: ${error.message}`;
+    }
+}
+
+// 2. PREVISÃO 7 DIAS
 async function buscarPrevisao(cidade) {
     try {
         const url = `https://api.openweathermap.org/data/2.5/forecast?q=${encodeURIComponent(cidade)}&appid=${WEATHER_API_KEY}&units=metric&lang=pt_br&cnt=7`;
@@ -310,10 +357,7 @@ async function buscarPrevisao(cidade) {
     }
 }
 
-// ============================================
-// 2. COTAÇÃO DE MOEDAS
-// ============================================
-
+// 3. COTAÇÃO
 async function buscarCotacao() {
     try {
         const url = 'https://economia.awesomeapi.com.br/json/last/USD-BRL,EUR-BRL,BTC-BRL';
@@ -331,149 +375,31 @@ async function buscarCotacao() {
     }
 }
 
-// ============================================
-// 3. CONVERSOR DE UNIDADES
-// ============================================
-
-function converterUnidades(comando) {
-    const cmd = comando.toLowerCase();
-    
-    // Temperatura
-    if (cmd.includes('celsius') && cmd.includes('fahrenheit')) {
-        const match = cmd.match(/(\d+(?:\.\d+)?)/);
-        if (match) {
-            const c = parseFloat(match[1]);
-            const f = (c * 9/5) + 32;
-            return `🌡️ ${c}°C = ${f.toFixed(1)}°F`;
-        }
-    }
-    
-    if (cmd.includes('fahrenheit') && cmd.includes('celsius')) {
-        const match = cmd.match(/(\d+(?:\.\d+)?)/);
-        if (match) {
-            const f = parseFloat(match[1]);
-            const c = (f - 32) * 5/9;
-            return `🌡️ ${f}°F = ${c.toFixed(1)}°C`;
-        }
-    }
-    
-    // Reais para Dólar
-    if (cmd.includes('real') && (cmd.includes('dólar') || cmd.includes('dolar'))) {
-        const match = cmd.match(/(\d+(?:\.\d+)?)/);
-        if (match) {
-            const reais = parseFloat(match[1]);
-            // Busca cotação em tempo real
-            fetch('https://economia.awesomeapi.com.br/json/last/USD-BRL')
-                .then(r => r.json())
-                .then(dados => {
-                    const dolar = parseFloat(dados.USDBRL.bid);
-                    const resultado = reais / dolar;
-                    adicionarMensagem('bot', `💰 R$ ${reais.toFixed(2)} = US$ ${resultado.toFixed(2)}`);
-                })
-                .catch(() => adicionarMensagem('bot', '❌ Erro ao buscar cotação.'));
-            return null;
-        }
-    }
-    
-    return '❓ Não entendi a conversão. Exemplo: "converter 30°C para Fahrenheit" ou "converter 50 reais para dólar"';
-}
-
-// ============================================
-// 4. CALCULADORA
-// ============================================
-
-function calcular(expressao) {
+// 4. NOTÍCIAS
+async function buscarNoticias(termo) {
     try {
-        const resultado = Function('"use strict"; return (' + expressao + ')')();
-        return `🧮 ${expressao} = ${resultado}`;
-    } catch {
-        return '❌ Não consegui calcular isso.';
+        const url = `https://newsapi.org/v2/everything?q=${encodeURIComponent(termo)}&language=pt&sortBy=publishedAt&pageSize=5&apiKey=${NEWS_API_KEY}`;
+        const response = await fetch(url);
+        const dados = await response.json();
+        
+        if (dados.status === 'error') return `❌ Erro: ${dados.message}`;
+        if (dados.totalResults === 0) return `📰 Nenhuma notícia encontrada sobre "${termo}".`;
+        
+        let resposta = `📰 Notícias sobre "${termo}"\n\n`;
+        for (let i = 0; i < Math.min(dados.articles.length, 5); i++) {
+            const artigo = dados.articles[i];
+            const titulo = artigo.title || 'Sem título';
+            const fonte = artigo.source.name || 'Fonte desconhecida';
+            const data = new Date(artigo.publishedAt).toLocaleDateString('pt-BR');
+            resposta += `${i+1}. ${titulo}\n   📰 ${fonte} • 📅 ${data}\n\n`;
+        }
+        return resposta;
+    } catch (error) {
+        return `❌ Erro ao buscar notícias: ${error.message}`;
     }
 }
 
-// ============================================
-// 5. QR CODE
-// ============================================
-
-function gerarQRCode(texto) {
-    const url = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(texto)}`;
-    return `![QR Code](${url})\n\n🔗 QR Code gerado para: ${texto}`;
-}
-
-// ============================================
-// 6. MAPA INTERATIVO (LEAFLET)
-// ============================================
-
-function criarMapa(localizacao) {
-    const mapDiv = document.createElement('div');
-    mapDiv.id = 'map-container';
-    mapDiv.style.width = '100%';
-    mapDiv.style.height = '250px';
-    mapDiv.style.borderRadius = '8px';
-    mapDiv.style.margin = '6px 0';
-    mapDiv.style.border = '1px solid var(--border-color)';
-    
-    chat.appendChild(mapDiv);
-    
-    // Inicializa mapa
-    const map = L.map('map-container').setView([-23.5505, -46.6333], 12);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap'
-    }).addTo(map);
-    
-    // Marcação
-    L.marker([-23.5505, -46.6333]).addTo(map)
-        .bindPopup('📍 ' + localizacao)
-        .openPopup();
-    
-    setTimeout(() => {
-        map.invalidateSize();
-    }, 100);
-}
-
-// ============================================
-// 7. YOUTUBE PLAYER
-// ============================================
-
-function tocarMusica(termo) {
-    const playerDiv = document.getElementById('youtube-player');
-    const playerContainer = document.getElementById('music-player');
-    const musicTitle = document.getElementById('music-title');
-    
-    playerContainer.style.display = 'block';
-    musicTitle.textContent = `▶️ Tocando: ${termo}`;
-    
-    // Busca vídeo no YouTube
-    fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=1&q=${encodeURIComponent(termo)}&type=video&key=AIzaSyDxQZcVQg0wE8T7Q9C5lY6V9XjVYVr1SqM`)
-        .then(r => r.json())
-        .then(dados => {
-            if (dados.items && dados.items.length > 0) {
-                const videoId = dados.items[0].id.videoId;
-                playerDiv.innerHTML = `
-                    <iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1" 
-                        frameborder="0" allow="autoplay; encrypted-media" allowfullscreen>
-                    </iframe>
-                `;
-                playerAtivo = true;
-            } else {
-                playerDiv.innerHTML = '<p style="color: var(--text-secondary); font-size:12px;">❌ Nenhum vídeo encontrado.</p>';
-            }
-        })
-        .catch(() => {
-            playerDiv.innerHTML = '<p style="color: var(--text-secondary); font-size:12px;">❌ Erro ao buscar vídeo.</p>';
-        });
-}
-
-function fecharPlayer() {
-    document.getElementById('music-player').style.display = 'none';
-    document.getElementById('youtube-player').innerHTML = '';
-    playerAtivo = false;
-}
-
-// ============================================
-// 8. PESQUISAR NA WIKIPEDIA
-// ============================================
-
+// 5. WIKIPEDIA
 async function pesquisarWikipedia(termo) {
     try {
         const url = `https://pt.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(termo)}&format=json&origin=*`;
@@ -509,37 +435,120 @@ async function pesquisarWikipedia(termo) {
     }
 }
 
-// ============================================
-// 9. BUSCAR NOTÍCIAS
-// ============================================
-
-async function buscarNoticias(termo) {
-    try {
-        const url = `https://newsapi.org/v2/everything?q=${encodeURIComponent(termo)}&language=pt&sortBy=publishedAt&pageSize=5&apiKey=${NEWS_API_KEY}`;
-        const response = await fetch(url);
-        const dados = await response.json();
-        
-        if (dados.status === 'error') return `❌ Erro: ${dados.message}`;
-        if (dados.totalResults === 0) return `📰 Nenhuma notícia encontrada sobre "${termo}".`;
-        
-        let resposta = `📰 Notícias sobre "${termo}"\n\n`;
-        for (let i = 0; i < Math.min(dados.articles.length, 5); i++) {
-            const artigo = dados.articles[i];
-            const titulo = artigo.title || 'Sem título';
-            const fonte = artigo.source.name || 'Fonte desconhecida';
-            const data = new Date(artigo.publishedAt).toLocaleDateString('pt-BR');
-            resposta += `${i+1}. ${titulo}\n   📰 ${fonte} • 📅 ${data}\n\n`;
+// 6. CONVERSOR
+function converterUnidades(comando) {
+    const cmd = comando.toLowerCase();
+    
+    if (cmd.includes('celsius') && cmd.includes('fahrenheit')) {
+        const match = cmd.match(/(\d+(?:\.\d+)?)/);
+        if (match) {
+            const c = parseFloat(match[1]);
+            const f = (c * 9/5) + 32;
+            return `🌡️ ${c}°C = ${f.toFixed(1)}°F`;
         }
-        return resposta;
-    } catch (error) {
-        return `❌ Erro ao buscar notícias: ${error.message}`;
+    }
+    
+    if (cmd.includes('fahrenheit') && cmd.includes('celsius')) {
+        const match = cmd.match(/(\d+(?:\.\d+)?)/);
+        if (match) {
+            const f = parseFloat(match[1]);
+            const c = (f - 32) * 5/9;
+            return `🌡️ ${f}°F = ${c.toFixed(1)}°C`;
+        }
+    }
+    
+    if (cmd.includes('real') && (cmd.includes('dólar') || cmd.includes('dolar'))) {
+        const match = cmd.match(/(\d+(?:\.\d+)?)/);
+        if (match) {
+            const reais = parseFloat(match[1]);
+            fetch('https://economia.awesomeapi.com.br/json/last/USD-BRL')
+                .then(r => r.json())
+                .then(dados => {
+                    const dolar = parseFloat(dados.USDBRL.bid);
+                    const resultado = reais / dolar;
+                    adicionarMensagem('bot', `💰 R$ ${reais.toFixed(2)} = US$ ${resultado.toFixed(2)}`);
+                })
+                .catch(() => adicionarMensagem('bot', '❌ Erro ao buscar cotação.'));
+            return null;
+        }
+    }
+    
+    return '❓ Não entendi a conversão. Exemplo: "converter 30°C para Fahrenheit" ou "converter 50 reais para dólar"';
+}
+
+// 7. CALCULADORA
+function calcular(expressao) {
+    try {
+        const resultado = Function('"use strict"; return (' + expressao + ')')();
+        return `🧮 ${expressao} = ${resultado}`;
+    } catch {
+        return '❌ Não consegui calcular isso.';
     }
 }
 
-// ============================================
-// 10. ABRIR SITES
-// ============================================
+// 8. QR CODE
+function gerarQRCode(texto) {
+    const url = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(texto)}`;
+    return `![QR Code](${url})\n\n🔗 QR Code gerado para: ${texto}`;
+}
 
+// 9. MAPA
+function criarMapa(localizacao) {
+    const mapDiv = document.createElement('div');
+    mapDiv.id = 'map-container';
+    mapDiv.style.width = '100%';
+    mapDiv.style.height = '250px';
+    mapDiv.style.borderRadius = '8px';
+    mapDiv.style.margin = '6px 0';
+    mapDiv.style.border = '1px solid var(--border-color)';
+    chat.appendChild(mapDiv);
+    
+    const map = L.map('map-container').setView([-23.5505, -46.6333], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap'
+    }).addTo(map);
+    L.marker([-23.5505, -46.6333]).addTo(map)
+        .bindPopup('📍 ' + localizacao)
+        .openPopup();
+    setTimeout(() => map.invalidateSize(), 100);
+}
+
+// 10. MÚSICA
+function tocarMusica(termo) {
+    const playerDiv = document.getElementById('youtube-player');
+    const playerContainer = document.getElementById('music-player');
+    const musicTitle = document.getElementById('music-title');
+    
+    playerContainer.style.display = 'block';
+    musicTitle.textContent = `▶️ Tocando: ${termo}`;
+    
+    fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=1&q=${encodeURIComponent(termo)}&type=video&key=AIzaSyDxQZcVQg0wE8T7Q9C5lY6V9XjVYVr1SqM`)
+        .then(r => r.json())
+        .then(dados => {
+            if (dados.items && dados.items.length > 0) {
+                const videoId = dados.items[0].id.videoId;
+                playerDiv.innerHTML = `
+                    <iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1" 
+                        frameborder="0" allow="autoplay; encrypted-media" allowfullscreen>
+                    </iframe>
+                `;
+                playerAtivo = true;
+            } else {
+                playerDiv.innerHTML = '<p style="color: var(--text-secondary); font-size:12px;">❌ Nenhum vídeo encontrado.</p>';
+            }
+        })
+        .catch(() => {
+            playerDiv.innerHTML = '<p style="color: var(--text-secondary); font-size:12px;">❌ Erro ao buscar vídeo.</p>';
+        });
+}
+
+function fecharPlayer() {
+    document.getElementById('music-player').style.display = 'none';
+    document.getElementById('youtube-player').innerHTML = '';
+    playerAtivo = false;
+}
+
+// 11. ABRIR SITES
 function abrirSite(comando) {
     let site = comando.replace(/^abrir\s*/i, '').trim();
     
@@ -582,10 +591,44 @@ function abrirSite(comando) {
     return `🔍 Pesquisando "${site}" no Google...`;
 }
 
-// ============================================
-// EXPORTAR CONVERSA (TXT)
-// ============================================
+// 12. GERAR CÓDIGO
+async function gerarCodigo(descricao) {
+    const prompt = `Gere apenas o código, sem explicações, para: ${descricao}. 
+    Responda APENAS com o código, sem texto adicional, sem formatação markdown, sem asteriscos.
+    Use a linguagem apropriada para a tarefa.`;
+    
+    const resposta = await chamarMistral(prompt);
+    let codigo = resposta.replace(/```\w*\n?/g, '').replace(/```/g, '').trim();
+    
+    if (codigo.includes('```')) {
+        codigo = codigo.split('```')[1] || codigo;
+    }
+    
+    return codigo;
+}
 
+function executarCodigo(codigo, linguagem = 'python') {
+    const extensoes = {
+        'python': 'py',
+        'javascript': 'js',
+        'html': 'html',
+        'css': 'css',
+        'java': 'java',
+        'cpp': 'cpp',
+        'c': 'c'
+    };
+    const ext = extensoes[linguagem] || 'txt';
+    const blob = new Blob([codigo], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `codigo_gerado.${ext}`;
+    a.click();
+    URL.revokeObjectURL(url);
+    return `✅ Código baixado como .${ext}`;
+}
+
+// 13. EXPORTAR CONVERSA
 function exportarConversa() {
     const mensagens = document.querySelectorAll('.message');
     let texto = '===== J.A.R.V.I.S. - Conversa Exportada =====\n\n';
@@ -610,7 +653,6 @@ function exportarConversa() {
     a.download = `jarvis-conversa-${new Date().toISOString().slice(0,10)}.txt`;
     a.click();
     URL.revokeObjectURL(url);
-    
     adicionarMensagem('bot', '✅ Conversa exportada com sucesso!');
 }
 
@@ -622,7 +664,41 @@ async function executarComando(comando) {
     const cmd = comando.toLowerCase().trim();
     
     // ============================================
-    // 1. EXPORTAR CONVERSA
+    // 1. PERGUNTAS SOBRE SI MESMO
+    // ============================================
+    
+    if (cmd.includes('quem é você') || cmd.includes('quem é o jarvis') || cmd.includes('o que você é')) {
+        adicionarMensagem('bot', `⚡ ${EU_SOU}`);
+        return;
+    }
+    
+    if (cmd.includes('mostrar seu código') || cmd.includes('mostre seu código') || cmd.includes('código fonte')) {
+        const codigoResumido = `
+// J.A.R.V.I.S. v5.0 - Resumo do Código
+// ====================================
+
+// Eu sou um assistente pessoal com:
+// - Reconhecimento de voz (SpeechRecognition)
+// - Visão computacional (imagens via Pixtral)
+// - Leitura de PDFs (PDF.js)
+// - Clima (OpenWeather API)
+// - Moedas (AwesomeAPI)
+// - Mapas (Leaflet)
+// - Música (YouTube API)
+// - Wikipedia, Notícias, Calculadora, etc.
+
+// Minha chave da Mistral está segura:
+const MISTRAL_API_KEY = "0k7vwPq3YQ2lq29J1dcxciBwyxE5QBV5";
+
+// Tenho mais de 800 linhas de código.
+// Posso gerar código, exportar conversas e muito mais!
+        `;
+        adicionarMensagem('bot', `📄 Resumo do meu código:\n\n\`\`\`javascript\n${codigoResumido}\n\`\`\``);
+        return;
+    }
+    
+    // ============================================
+    // 2. EXPORTAR CONVERSA
     // ============================================
     
     if (cmd.includes('exportar conversa') || cmd.includes('exportar')) {
@@ -631,7 +707,7 @@ async function executarComando(comando) {
     }
     
     // ============================================
-    // 2. ESTATÍSTICAS
+    // 3. ESTATÍSTICAS
     // ============================================
     
     if (cmd.includes('estatísticas') || cmd.includes('estatisticas')) {
@@ -651,7 +727,7 @@ async function executarComando(comando) {
     }
     
     // ============================================
-    // 3. PDF - PERGUNTA SOBRE O PDF
+    // 4. PDF - PERGUNTA SOBRE O PDF
     // ============================================
     
     if (pdfTexto && !cmd.includes('clima') && !cmd.includes('tempo') && !cmd.includes('notícia') && !cmd.includes('abrir')) {
@@ -672,7 +748,59 @@ async function executarComando(comando) {
     }
     
     // ============================================
-    // 4. PREVISÃO DO TEMPO
+    // 5. GERAR CÓDIGO
+    // ============================================
+    
+    if (cmd.includes('criar código') || cmd.includes('gerar código') || cmd.includes('crie um código') || cmd.includes('gere um código')) {
+        const descricao = cmd.replace(/criar código\s*/i, '').replace(/gerar código\s*/i, '').replace(/crie um código\s*/i, '').replace(/gere um código\s*/i, '').trim();
+        if (!descricao) {
+            adicionarMensagem('bot', '❓ Descreva o código que você quer criar. Exemplo: "crie um código Python que soma dois números"');
+            return;
+        }
+        
+        const loadingDiv = document.createElement('div');
+        loadingDiv.className = 'message bot';
+        loadingDiv.id = 'loading-msg';
+        loadingDiv.innerHTML = `<div class="avatar">⚡</div><div class="bubble" style="color: var(--text-secondary);">💻 Gerando código...</div>`;
+        chat.appendChild(loadingDiv);
+        chat.scrollTop = chat.scrollHeight;
+        
+        const codigo = await gerarCodigo(descricao);
+        
+        const loadingElement = document.getElementById('loading-msg');
+        if (loadingElement) loadingElement.remove();
+        
+        let linguagem = 'python';
+        if (descricao.includes('javascript') || descricao.includes('js')) linguagem = 'javascript';
+        if (descricao.includes('html')) linguagem = 'html';
+        if (descricao.includes('css')) linguagem = 'css';
+        if (descricao.includes('java')) linguagem = 'java';
+        if (descricao.includes('c++') || descricao.includes('cpp')) linguagem = 'cpp';
+        
+        ultimoCodigo = codigo;
+        ultimaLinguagem = linguagem;
+        
+        adicionarMensagem('bot', `💻 Código gerado (${linguagem}):\n\n\`\`\`${linguagem}\n${codigo}\n\`\`\``);
+        adicionarMensagem('bot', `📥 Diga "baixar código" para baixar o arquivo.`);
+        return;
+    }
+    
+    // ============================================
+    // 6. BAIXAR CÓDIGO
+    // ============================================
+    
+    if (cmd.includes('baixar código') || cmd.includes('download código')) {
+        if (ultimoCodigo) {
+            const resultado = executarCodigo(ultimoCodigo, ultimaLinguagem || 'python');
+            adicionarMensagem('bot', resultado);
+        } else {
+            adicionarMensagem('bot', '❌ Nenhum código foi gerado ainda. Peça: "crie um código que faz [algo]"');
+        }
+        return;
+    }
+    
+    // ============================================
+    // 7. PREVISÃO DO TEMPO
     // ============================================
     
     if (cmd.includes('previsão') || cmd.includes('previsao')) {
@@ -684,7 +812,7 @@ async function executarComando(comando) {
     }
     
     // ============================================
-    // 5. CLIMA (ATUAL)
+    // 8. CLIMA
     // ============================================
     
     if (cmd.includes('clima') || cmd.includes('tempo')) {
@@ -696,7 +824,7 @@ async function executarComando(comando) {
     }
     
     // ============================================
-    // 6. COTAÇÃO
+    // 9. COTAÇÃO
     // ============================================
     
     if (cmd.includes('cotação') || cmd.includes('cotacao') || cmd.includes('dólar') || cmd.includes('euro') || cmd.includes('bitcoin')) {
@@ -706,7 +834,7 @@ async function executarComando(comando) {
     }
     
     // ============================================
-    // 7. CONVERSOR
+    // 10. CONVERSOR
     // ============================================
     
     if (cmd.includes('converter') || cmd.includes('convert')) {
@@ -716,7 +844,7 @@ async function executarComando(comando) {
     }
     
     // ============================================
-    // 8. CALCULADORA
+    // 11. CALCULADORA
     // ============================================
     
     if (cmd.includes('calcular') || cmd.includes('calcule')) {
@@ -727,7 +855,7 @@ async function executarComando(comando) {
     }
     
     // ============================================
-    // 9. QR CODE
+    // 12. QR CODE
     // ============================================
     
     if (cmd.includes('qrcode') || cmd.includes('qr code')) {
@@ -742,7 +870,7 @@ async function executarComando(comando) {
     }
     
     // ============================================
-    // 10. MAPA
+    // 13. MAPA
     // ============================================
     
     if (cmd.includes('mapa') || cmd.includes('onde fica')) {
@@ -754,7 +882,7 @@ async function executarComando(comando) {
     }
     
     // ============================================
-    // 11. MÚSICA/YOUTUBE
+    // 14. MÚSICA
     // ============================================
     
     if (cmd.includes('tocar') || cmd.includes('música') || cmd.includes('musica') || cmd.includes('youtube')) {
@@ -766,7 +894,7 @@ async function executarComando(comando) {
     }
     
     // ============================================
-    // 12. NOTÍCIAS
+    // 15. NOTÍCIAS
     // ============================================
     
     if (cmd.includes('notícias') || cmd.includes('noticias')) {
@@ -778,7 +906,7 @@ async function executarComando(comando) {
     }
     
     // ============================================
-    // 13. WIKIPEDIA
+    // 16. WIKIPEDIA
     // ============================================
     
     if (cmd.includes('pesquisar sobre') || cmd.includes('pesquisa sobre') || cmd.includes('o que é') || cmd.includes('quem é') || cmd.includes('sobre')) {
@@ -793,7 +921,7 @@ async function executarComando(comando) {
     }
     
     // ============================================
-    // 14. ABRIR SITES
+    // 17. ABRIR SITES
     // ============================================
     
     if (cmd.includes('abrir')) {
@@ -803,7 +931,7 @@ async function executarComando(comando) {
     }
     
     // ============================================
-    // 15. HORA
+    // 18. HORA
     // ============================================
     
     if (cmd.includes('hora') || cmd.includes('horas') || cmd === 'que horas são') {
@@ -819,7 +947,7 @@ async function executarComando(comando) {
     }
     
     // ============================================
-    // 16. LEMBRETE
+    // 19. LEMBRETE
     // ============================================
     
     if (cmd.includes('lembrete')) {
@@ -830,12 +958,20 @@ async function executarComando(comando) {
     }
     
     // ============================================
-    // 17. AJUDA
+    // 20. AJUDA
     // ============================================
     
     if (cmd.includes('ajuda') || cmd.includes('comandos') || cmd.includes('o que você faz')) {
         adicionarMensagem('bot', `
 📋 TODOS OS COMANDOS DO J.A.R.V.I.S. v5.0
+
+📌 SOBRE MIM:
+  "quem é você" - Sobre o J.A.R.V.I.S.
+  "mostrar seu código" - Resumo do código
+
+💻 CÓDIGO:
+  "crie um código Python que [faz algo]" - Gera código
+  "baixar código" - Baixa o código gerado
 
 🌤️ CLIMA:
   "clima [cidade]" - Clima atual
@@ -885,7 +1021,7 @@ async function executarComando(comando) {
     }
     
     // ============================================
-    // 18. IA (COM VISÃO)
+    // 21. IA COM IMAGEM
     // ============================================
     
     if (imagemBase64) {
@@ -907,7 +1043,7 @@ async function executarComando(comando) {
     }
     
     // ============================================
-    // 19. IA (SEM IMAGEM)
+    // 22. IA (SEM IMAGEM)
     // ============================================
     
     const loadingDiv = document.createElement('div');
@@ -923,30 +1059,6 @@ async function executarComando(comando) {
     if (loadingElement) loadingElement.remove();
     
     adicionarMensagem('bot', respostaIA);
-}
-
-// ============================================
-// CLIMA (ATUAL) - AUXILIAR
-// ============================================
-
-async function buscarClima(cidade) {
-    try {
-        const url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(cidade)}&appid=${WEATHER_API_KEY}&units=metric&lang=pt_br`;
-        const response = await fetch(url);
-        const dados = await response.json();
-        
-        if (dados.cod === '404') return `❌ Cidade "${cidade}" não encontrada.`;
-        
-        const temp = Math.round(dados.main.temp);
-        const sensacao = Math.round(dados.main.feels_like);
-        const descricao = dados.weather[0].description;
-        const umidade = dados.main.humidity;
-        const vento = Math.round(dados.wind.speed * 3.6);
-        
-        return `🌤️ Clima em ${cidade.toUpperCase()}\n\n🌡️ Temperatura: ${temp}°C (sensação ${sensacao}°C)\n📝 ${descricao}\n💧 Umidade: ${umidade}%\n💨 Vento: ${vento} km/h`;
-    } catch (error) {
-        return `❌ Erro ao buscar clima: ${error.message}`;
-    }
 }
 
 // ============================================
