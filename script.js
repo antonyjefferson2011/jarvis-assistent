@@ -9,10 +9,7 @@
 // 🔥 GROQ (para conversas - respeita prompt!)
 const GROQ_API_KEY = "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";
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const GROQ_MODEL = "mixtral-8x7b-32768";
-
-// OPÇÃO 2: Llama 3.3 (mais poderoso)
-// const GROQ_MODEL = "llama-3.3-70b-versatile";
+const GROQ_MODEL = "llama-3.3-70b-versatile";
 
 // OPÇÃO 3: Gemma 2 (Google)
 // const GROQ_MODEL = "gemma2-9b-it";
