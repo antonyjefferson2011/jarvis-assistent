@@ -9,7 +9,6 @@
 // 🔥 GROQ (para conversas - respeita prompt!)
 const GROQ_API_KEY = "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";
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-// OPÇÃO 1: Mixtral (mais rápido, recomendo)
 const GROQ_MODEL = "mixtral-8x7b-32768";
 
 // OPÇÃO 2: Llama 3.3 (mais poderoso)
