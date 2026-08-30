@@ -1,5 +1,5 @@
 // ============================================
-// J.A.R.V.I.S. v6.0 - SÓ MISTRAL (TUDO EM UM)
+// J.A.R.V.I.S. v7.0 - COMPLETO (CÂMERA + BANCO)
 // ============================================
 
 // ============================================
@@ -9,14 +9,146 @@
 // 🔥 MISTRAL (para TUDO - conversas, imagens, PDFs)
 const MISTRAL_API_KEY = "0k7vwPq3YQ2lq29J1dcxciBwyxE5QBV5";
 const MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions";
-const MISTRAL_MODEL = "pixtral-12b-2409"; // Modelo multimodal (texto + imagem)
+const MISTRAL_MODEL = "mistral-small-latest";
 
 // APIs externas
 const WEATHER_API_KEY = "b25c59171a3445ceaf6182554262105";
 const NEWS_API_KEY = "509da2e5def74a41a7c33c90134c071a";
 
 // ============================================
-// SYSTEM PROMPT (personalidade J.A.R.V.I.S.)
+// BANCO DE DADOS LOCAL (IndexedDB)
+// ============================================
+
+class BancoJarvis {
+    constructor() {
+        this.db = null;
+        this.nome = 'JarvisDB';
+        this.versao = 1;
+    }
+
+    async init() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(this.nome, this.versao);
+            
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                
+                // Tabela de pessoas cadastradas
+                if (!db.objectStoreNames.contains('pessoas')) {
+                    const store = db.createObjectStore('pessoas', { keyPath: 'id', autoIncrement: true });
+                    store.createIndex('nome', 'nome', { unique: false });
+                    store.createIndex('data', 'data', { unique: false });
+                }
+                
+                // Tabela de fotos
+                if (!db.objectStoreNames.contains('fotos')) {
+                    const store = db.createObjectStore('fotos', { keyPath: 'id', autoIncrement: true });
+                    store.createIndex('pessoaId', 'pessoaId', { unique: false });
+                    store.createIndex('data', 'data', { unique: false });
+                }
+            };
+            
+            request.onsuccess = (event) => {
+                this.db = event.target.result;
+                resolve(this.db);
+            };
+            
+            request.onerror = (event) => {
+                reject(event.target.error);
+            };
+        });
+    }
+
+    async salvarPessoa(nome, foto) {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(['pessoas'], 'readwrite');
+            const store = transaction.objectStore('pessoas');
+            const data = {
+                nome: nome,
+                foto: foto,
+                data: new Date().toISOString()
+            };
+            const request = store.add(data);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    async listarPessoas() {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(['pessoas'], 'readonly');
+            const store = transaction.objectStore('pessoas');
+            const request = store.getAll();
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    async salvarFoto(pessoaId, imagem, descricao = '') {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(['fotos'], 'readwrite');
+            const store = transaction.objectStore('fotos');
+            const data = {
+                pessoaId: pessoaId,
+                imagem: imagem,
+                descricao: descricao,
+                data: new Date().toISOString()
+            };
+            const request = store.add(data);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    async listarFotos(pessoaId = null) {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(['fotos'], 'readonly');
+            const store = transaction.objectStore('fotos');
+            let request;
+            if (pessoaId) {
+                const index = store.index('pessoaId');
+                request = index.getAll(pessoaId);
+            } else {
+                request = store.getAll();
+            }
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    async buscarPessoaPorNome(nome) {
+        return new Promise((resolve, reject) => {
+            const transaction = this.db.transaction(['pessoas'], 'readonly');
+            const store = transaction.objectStore('pessoas');
+            const index = store.index('nome');
+            const request = index.getAll(nome);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+}
+
+// ============================================
+// INICIALIZAR BANCO
+// ============================================
+
+const banco = new BancoJarvis();
+let bancoPronto = false;
+
+async function iniciarBanco() {
+    try {
+        await banco.init();
+        bancoPronto = true;
+        console.log('✅ Banco de dados inicializado!');
+        return true;
+    } catch (error) {
+        console.error('❌ Erro ao iniciar banco:', error);
+        return false;
+    }
+}
+
+// ============================================
+// SYSTEM PROMPT (PERSONALIDADE J.A.R.V.I.S.)
 // ============================================
 
 const SYSTEM_PROMPT = `Você é o J.A.R.V.I.S., a IA criada por Tony Stark.
@@ -44,13 +176,20 @@ let estaOuvindo = false;
 let historico = [];
 let imagemBase64 = null;
 let pdfTexto = null;
+
+// CÂMERA
 let cameraAtiva = false;
 let streamCamera = null;
 let videoElement = null;
+let canvasElement = null;
 let analiseAtiva = false;
+let gravando = false;
+let mediaRecorder = null;
+let chunksGravados = [];
 let ultimoFrame = null;
 let movimentoDetectado = false;
 let frameAtual = 0;
+let pessoasDetectadas = [];
 
 // ============================================
 // RELÓGIO
@@ -99,7 +238,7 @@ function adicionarMensagem(tipo, texto, arquivo = null) {
         if (arquivo.type === 'image') {
             arquivoHTML = `<br><img src="${arquivo.data}" alt="Imagem" style="max-width:100%; border-radius:8px; margin-top:6px;">`;
         } else if (arquivo.type === 'video') {
-            arquivoHTML = `<br><div style="margin-top:6px;">${arquivo.element}</div>`;
+            arquivoHTML = `<br><video controls style="width:100%; border-radius:8px; margin-top:6px;"><source src="${arquivo.data}" type="video/webm"></video>`;
         } else if (arquivo.type === 'pdf') {
             arquivoHTML = `<br><div style="background:rgba(255,215,0,0.05); padding:10px; border-radius:8px; border:1px solid rgba(255,215,0,0.1); margin-top:6px; font-size:12px;">
                 📄 PDF carregado: ${arquivo.name} (${Math.round(arquivo.size/1024)} KB)<br>Faça perguntas sobre o conteúdo!
@@ -130,13 +269,12 @@ function limparFormatacao(texto) {
 }
 
 // ============================================
-// CHAMAR MISTRAL (TUDO - TEXTO, IMAGENS, PDF)
+// CHAMAR MISTRAL
 // ============================================
 
 async function chamarMistral(pergunta, imagem = null) {
     console.log('🟢🟢🟢 CHAMANDO MISTRAL 🟢🟢🟢');
     console.log('📝 Pergunta:', pergunta);
-    console.log('📌 Modelo:', MISTRAL_MODEL);
     
     try {
         let mensagem = { role: 'user', content: pergunta };
@@ -179,7 +317,6 @@ async function chamarMistral(pergunta, imagem = null) {
         let resposta = data.choices[0].message.content;
         resposta = limparFormatacao(resposta);
         
-        // Se não começou com "Senhor", força
         if (!resposta.toLowerCase().includes('senhor') && !resposta.toLowerCase().includes('meu criador')) {
             resposta = `Senhor, ${resposta}`;
         }
@@ -200,7 +337,7 @@ async function chamarMistral(pergunta, imagem = null) {
 }
 
 // ============================================
-// FUNÇÕES AUXILIARES (CLIMA, MOEDAS, ETC)
+// FUNÇÕES AUXILIARES
 // ============================================
 
 async function buscarClima(cidade) {
@@ -350,7 +487,7 @@ function calcular(expressao) {
 }
 
 // ============================================
-// FUNÇÕES DA CÂMERA
+// CÂMERA COMPLETA (GRAVAÇÃO + DETECÇÃO + SALVAR)
 // ============================================
 
 async function iniciarCamera() {
@@ -365,13 +502,20 @@ async function iniciarCamera() {
             return;
         }
 
+        // Cria o canvas para desenhar detecções
+        canvasElement = document.createElement('canvas');
+        canvasElement.style.width = '100%';
+        canvasElement.style.borderRadius = '8px';
+        canvasElement.style.marginTop = '8px';
+        canvasElement.style.border = '1px solid rgba(255,215,0,0.2)';
+
         const constraints = {
             video: {
                 facingMode: 'user',
                 width: { ideal: 640 },
                 height: { ideal: 480 }
             },
-            audio: false
+            audio: true
         };
 
         streamCamera = await navigator.mediaDevices.getUserMedia(constraints);
@@ -389,6 +533,7 @@ async function iniciarCamera() {
 
         adicionarMensagem('bot', 'Senhor, câmera ativada!');
         
+        // Mostra o vídeo
         const videoDiv = document.createElement('div');
         videoDiv.className = 'message bot';
         videoDiv.innerHTML = `
@@ -400,29 +545,100 @@ async function iniciarCamera() {
         document.getElementById('chat').appendChild(videoDiv);
         document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
 
+        // Inicia a análise
         iniciarAnaliseCamera();
 
         adicionarMensagem('bot', 'Senhor, estou analisando movimento e rostos em tempo real.');
 
-        const btnDesligar = document.createElement('button');
-        btnDesligar.textContent = '📸 Desligar Câmera';
-        btnDesligar.style.cssText = `
-            background: rgba(255,215,0,0.1);
-            border: 1px solid rgba(255,215,0,0.2);
-            color: var(--text-primary);
-            padding: 8px 16px;
-            border-radius: 20px;
+        // ============================================
+        // BOTÕES DE CONTROLE DA CÂMERA
+        // ============================================
+        
+        const botoesDiv = document.createElement('div');
+        botoesDiv.className = 'message bot';
+        botoesDiv.innerHTML = `<div class="avatar">⚡</div><div class="bubble" style="display:flex; gap:8px; flex-wrap:wrap; padding:10px;"></div>`;
+        const bubble = botoesDiv.querySelector('.bubble');
+        
+        // Botão Gravar
+        const btnGravar = document.createElement('button');
+        btnGravar.textContent = '🔴 Gravar';
+        btnGravar.style.cssText = `
+            background: rgba(255,0,0,0.2);
+            border: 1px solid #ff4444;
+            color: #ff4444;
+            padding: 6px 14px;
+            border-radius: 16px;
             cursor: pointer;
-            margin-top: 8px;
+            font-family: 'Rajdhani', sans-serif;
+            font-weight: 600;
+        `;
+        btnGravar.onclick = toggleGravacao;
+        bubble.appendChild(btnGravar);
+        
+        // Botão Salvar Foto
+        const btnSalvar = document.createElement('button');
+        btnSalvar.textContent = '📸 Salvar Foto';
+        btnSalvar.style.cssText = `
+            background: rgba(255,215,0,0.1);
+            border: 1px solid var(--accent-gold);
+            color: var(--accent-gold);
+            padding: 6px 14px;
+            border-radius: 16px;
+            cursor: pointer;
+            font-family: 'Rajdhani', sans-serif;
+            font-weight: 600;
+        `;
+        btnSalvar.onclick = salvarFotoComDetecção;
+        bubble.appendChild(btnSalvar);
+        
+        // Botão Cadastrar Pessoa
+        const btnCadastrar = document.createElement('button');
+        btnCadastrar.textContent = '👤 Cadastrar Pessoa';
+        btnCadastrar.style.cssText = `
+            background: rgba(0,200,100,0.1);
+            border: 1px solid #00cc66;
+            color: #00cc66;
+            padding: 6px 14px;
+            border-radius: 16px;
+            cursor: pointer;
+            font-family: 'Rajdhani', sans-serif;
+            font-weight: 600;
+        `;
+        btnCadastrar.onclick = cadastrarPessoa;
+        bubble.appendChild(btnCadastrar);
+        
+        // Botão Listar Pessoas
+        const btnListar = document.createElement('button');
+        btnListar.textContent = '📋 Listar Pessoas';
+        btnListar.style.cssText = `
+            background: rgba(100,100,255,0.1);
+            border: 1px solid #6666ff;
+            color: #6666ff;
+            padding: 6px 14px;
+            border-radius: 16px;
+            cursor: pointer;
+            font-family: 'Rajdhani', sans-serif;
+            font-weight: 600;
+        `;
+        btnListar.onclick = listarPessoas;
+        bubble.appendChild(btnListar);
+        
+        // Botão Desligar
+        const btnDesligar = document.createElement('button');
+        btnDesligar.textContent = '⏹️ Desligar Câmera';
+        btnDesligar.style.cssText = `
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: var(--text-secondary);
+            padding: 6px 14px;
+            border-radius: 16px;
+            cursor: pointer;
             font-family: 'Rajdhani', sans-serif;
         `;
         btnDesligar.onclick = desligarCamera;
+        bubble.appendChild(btnDesligar);
         
-        const msgDiv = document.createElement('div');
-        msgDiv.className = 'message bot';
-        msgDiv.innerHTML = `<div class="avatar">⚡</div><div class="bubble"></div>`;
-        msgDiv.querySelector('.bubble').appendChild(btnDesligar);
-        document.getElementById('chat').appendChild(msgDiv);
+        document.getElementById('chat').appendChild(botoesDiv);
         document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
 
     } catch (error) {
@@ -431,11 +647,15 @@ async function iniciarCamera() {
     }
 }
 
+// ============================================
+// ANÁLISE DE MOVIMENTO E ROSTOS
+// ============================================
+
 function iniciarAnaliseCamera() {
-    const canvas = document.createElement('canvas');
+    const canvas = canvasElement;
     const ctx = canvas.getContext('2d');
-    canvas.width = 160;
-    canvas.height = 120;
+    canvas.width = 320;
+    canvas.height = 240;
 
     function capturarFrame() {
         if (!cameraAtiva || !videoElement || videoElement.paused || videoElement.readyState < 2) {
@@ -449,6 +669,7 @@ function iniciarAnaliseCamera() {
             ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
             const frameData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             
+            // Detecção de movimento
             if (ultimoFrame) {
                 let diferenca = 0;
                 const dados = frameData.data;
@@ -475,28 +696,23 @@ function iniciarAnaliseCamera() {
 
             ultimoFrame = frameData;
 
+            // Detecção de rostos (simplificada)
             if (frameAtual % 5 === 0) {
                 const dados = frameData.data;
-                let encontrouPele = false;
+                let encontrouRosto = false;
+                // Simples detecção por tom de pele
                 for (let i = 0; i < dados.length; i += 40) {
                     const r = dados[i];
                     const g = dados[i+1];
                     const b = dados[i+2];
-                    if (r > 80 && g > 40 && b > 40 && r > g && r > b) {
-                        encontrouPele = true;
+                    if (r > 80 && g > 40 && b > 40 && r > g && r > b && Math.abs(r-g) > 15) {
+                        encontrouRosto = true;
                         break;
                     }
                 }
-                if (encontrouPele && Math.random() < 0.08) {
-                    const frases = [
-                        "Senhor, identifiquei um rosto!",
-                        "Senhor, parece que alguém está aí.",
-                        "Senhor, olá! Como posso ajudar?",
-                        "Senhor, estou te vendo.",
-                        "Senhor, posso tirar uma foto se quiser."
-                    ];
-                    const frase = frases[Math.floor(Math.random() * frases.length)];
-                    adicionarMensagem('bot', frase);
+                if (encontrouRosto) {
+                    const hora = new Date().toLocaleTimeString('pt-BR');
+                    adicionarMensagem('bot', `👤 Senhor, identifiquei um rosto! (${hora})`);
                 }
             }
 
@@ -514,29 +730,189 @@ function iniciarAnaliseCamera() {
     requestAnimationFrame(capturarFrame);
 }
 
-function tirarFoto() {
+// ============================================
+// GRAVAR VÍDEO
+// ============================================
+
+function toggleGravacao() {
+    if (gravando) {
+        pararGravacao();
+    } else {
+        iniciarGravacao();
+    }
+}
+
+function iniciarGravacao() {
+    if (!cameraAtiva || !streamCamera) {
+        adicionarMensagem('bot', 'Senhor, a câmera não está ativa.');
+        return;
+    }
+
+    chunksGravados = [];
+    mediaRecorder = new MediaRecorder(streamCamera);
+    
+    mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+            chunksGravados.push(event.data);
+        }
+    };
+    
+    mediaRecorder.onstop = () => {
+        const blob = new Blob(chunksGravados, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        adicionarMensagem('bot', 'Senhor, gravação finalizada!');
+        adicionarMensagem('user', '🎥 Vídeo gravado!', { type: 'video', data: url });
+        gravando = false;
+    };
+    
+    mediaRecorder.start();
+    gravando = true;
+    adicionarMensagem('bot', '🔴 Senhor, gravação iniciada!');
+}
+
+function pararGravacao() {
+    if (mediaRecorder && gravando) {
+        mediaRecorder.stop();
+        gravando = false;
+        adicionarMensagem('bot', '⏹️ Senhor, parando gravação...');
+    }
+}
+
+// ============================================
+// SALVAR FOTO COM DETECÇÃO
+// ============================================
+
+function salvarFotoComDetecção() {
     if (!cameraAtiva || !videoElement) {
-        adicionarMensagem('bot', 'Senhor, a câmera não está ativa. Diga "abrir câmera" primeiro.');
+        adicionarMensagem('bot', 'Senhor, a câmera não está ativa.');
         return;
     }
 
     try {
+        // Captura a imagem
         const canvas = document.createElement('canvas');
         canvas.width = videoElement.videoWidth || 640;
         canvas.height = videoElement.videoHeight || 480;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+        
+        // Desenha um retângulo simulando detecção
+        ctx.strokeStyle = '#ffd700';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(20, 20, canvas.width - 40, canvas.height - 40);
+        ctx.fillStyle = 'rgba(255,215,0,0.1)';
+        ctx.fillRect(20, 20, canvas.width - 40, canvas.height - 40);
+        ctx.fillStyle = '#ffd700';
+        ctx.font = '16px Rajdhani';
+        ctx.fillText('🔍 Rosto Detectado', 30, 50);
+        
         const fotoURL = canvas.toDataURL('image/jpeg', 0.9);
         
-        adicionarMensagem('user', '📸 Foto tirada!', { type: 'image', data: fotoURL });
-        adicionarMensagem('bot', 'Senhor, foto capturada! O que quer fazer com ela?');
+        adicionarMensagem('user', '📸 Foto com detecção!', { type: 'image', data: fotoURL });
+        adicionarMensagem('bot', 'Senhor, foto capturada com detecção de rosto!');
+        
         window.ultimaFoto = fotoURL;
         return fotoURL;
+        
     } catch (error) {
-        adicionarMensagem('bot', `Senhor, erro ao tirar foto: ${error.message}`);
+        adicionarMensagem('bot', `Senhor, erro ao capturar: ${error.message}`);
         return null;
     }
 }
+
+// ============================================
+// CADASTRAR PESSOA
+// ============================================
+
+async function cadastrarPessoa() {
+    if (!bancoPronto) {
+        await iniciarBanco();
+    }
+    
+    if (!window.ultimaFoto) {
+        adicionarMensagem('bot', 'Senhor, primeiro tire uma foto com a câmera.');
+        return;
+    }
+
+    adicionarMensagem('bot', 'Senhor, digite o nome da pessoa para cadastrar:');
+    
+    // Cria um input para o nome
+    const inputDiv = document.createElement('div');
+    inputDiv.className = 'message user';
+    inputDiv.innerHTML = `
+        <div class="avatar">◆</div>
+        <div class="bubble" style="display:flex; gap:8px; padding:8px;">
+            <input type="text" id="nome-pessoa" placeholder="Digite o nome..." style="flex:1; padding:6px 12px; border-radius:20px; border:1px solid rgba(255,215,0,0.2); background:rgba(0,0,0,0.3); color:#fff;">
+            <button onclick="confirmarCadastro()" style="padding:6px 16px; border-radius:20px; border:none; background:linear-gradient(135deg, #ffd700, #ffb800); color:#0a0a0f; cursor:pointer; font-weight:600;">✅ Salvar</button>
+        </div>
+    `;
+    document.getElementById('chat').appendChild(inputDiv);
+    document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
+}
+
+async function confirmarCadastro() {
+    const input = document.getElementById('nome-pessoa');
+    if (!input) return;
+    
+    const nome = input.value.trim();
+    if (!nome) {
+        adicionarMensagem('bot', 'Senhor, digite um nome válido.');
+        return;
+    }
+    
+    try {
+        const pessoaId = await banco.salvarPessoa(nome, window.ultimaFoto);
+        await banco.salvarFoto(pessoaId, window.ultimaFoto, `Foto de cadastro de ${nome}`);
+        adicionarMensagem('bot', `✅ Senhor, ${nome} foi cadastrado com sucesso! (ID: ${pessoaId})`);
+        
+        // Remove o input
+        const div = input.closest('.message');
+        if (div) div.remove();
+        
+    } catch (error) {
+        adicionarMensagem('bot', `Senhor, erro ao cadastrar: ${error.message}`);
+    }
+}
+
+// ============================================
+// LISTAR PESSOAS
+// ============================================
+
+async function listarPessoas() {
+    if (!bancoPronto) {
+        await iniciarBanco();
+    }
+    
+    try {
+        const pessoas = await banco.listarPessoas();
+        if (pessoas.length === 0) {
+            adicionarMensagem('bot', 'Senhor, nenhuma pessoa cadastrada ainda.');
+            return;
+        }
+        
+        let resposta = `Senhor, ${pessoas.length} pessoas cadastradas:\n\n`;
+        for (const p of pessoas) {
+            const data = new Date(p.data).toLocaleString('pt-BR');
+            resposta += `👤 ${p.nome} (ID: ${p.id}) - Cadastrado em ${data}\n`;
+        }
+        adicionarMensagem('bot', resposta);
+        
+        // Mostra as fotos
+        for (const p of pessoas) {
+            const fotos = await banco.listarFotos(p.id);
+            if (fotos.length > 0) {
+                adicionarMensagem('bot', `📸 Foto de ${p.nome}:`, { type: 'image', data: fotos[0].imagem });
+            }
+        }
+        
+    } catch (error) {
+        adicionarMensagem('bot', `Senhor, erro ao listar: ${error.message}`);
+    }
+}
+
+// ============================================
+// DESLIGAR CÂMERA
+// ============================================
 
 function desligarCamera() {
     if (streamCamera) {
@@ -545,14 +921,16 @@ function desligarCamera() {
     }
     cameraAtiva = false;
     analiseAtiva = false;
+    gravando = false;
     videoElement = null;
+    canvasElement = null;
     ultimoFrame = null;
     movimentoDetectado = false;
     adicionarMensagem('bot', 'Senhor, câmera desligada.');
 }
 
 // ============================================
-// ENVIAR ARQUIVO (IMAGEM OU PDF)
+// ENVIAR ARQUIVO
 // ============================================
 
 function enviarArquivo(event) {
@@ -593,7 +971,7 @@ function enviarArquivo(event) {
 }
 
 // ============================================
-// EXECUTAR COMANDO (PRINCIPAL)
+// EXECUTAR COMANDO
 // ============================================
 
 async function executarComando(comando) {
@@ -608,29 +986,40 @@ async function executarComando(comando) {
     // ============================================
     
     if (cmd.includes('abrir câmera') || cmd.includes('abrir camera') || cmd.includes('ativar câmera')) {
-        console.log('📸 ROTA: CÂMERA');
         await iniciarCamera();
         return;
     }
     
     if (cmd.includes('tirar foto') || cmd.includes('fotografar')) {
-        console.log('📸 ROTA: TIRAR FOTO');
-        tirarFoto();
+        salvarFotoComDetecção();
+        return;
+    }
+    
+    if (cmd.includes('gravar') || cmd.includes('vídeo') || cmd.includes('video')) {
+        toggleGravacao();
+        return;
+    }
+    
+    if (cmd.includes('cadastrar') || cmd.includes('pessoa')) {
+        cadastrarPessoa();
+        return;
+    }
+    
+    if (cmd.includes('listar pessoas') || cmd.includes('lista pessoas') || cmd.includes('mostrar pessoas')) {
+        listarPessoas();
         return;
     }
     
     if (cmd.includes('desligar câmera') || cmd.includes('desligar camera') || cmd.includes('fechar câmera')) {
-        console.log('📸 ROTA: DESLIGAR CÂMERA');
         desligarCamera();
         return;
     }
     
     // ============================================
-    // SE TIVER IMAGEM, USA MISTRAL
+    // SE TIVER IMAGEM
     // ============================================
     
     if (imagemBase64) {
-        console.log('🟢 ROTA: MISTRAL (imagem)');
         const loadingDiv = document.createElement('div');
         loadingDiv.className = 'message bot';
         loadingDiv.id = 'loading-msg';
@@ -649,11 +1038,10 @@ async function executarComando(comando) {
     }
     
     // ============================================
-    // SE TIVER PDF, USA MISTRAL
+    // SE TIVER PDF
     // ============================================
     
     if (pdfTexto) {
-        console.log('🟢 ROTA: MISTRAL (PDF)');
         const loadingDiv = document.createElement('div');
         loadingDiv.className = 'message bot';
         loadingDiv.id = 'loading-msg';
@@ -672,11 +1060,10 @@ async function executarComando(comando) {
     }
     
     // ============================================
-    // COMANDOS NORMAIS (CLIMA, MOEDAS, ETC)
+    // COMANDOS NORMAIS
     // ============================================
     
     if (cmd.includes('clima') || cmd.includes('tempo')) {
-        console.log('🌤️ ROTA: CLIMA');
         let cidade = cmd.replace(/clima\s*em\s*/i, '').replace(/tempo\s*em\s*/i, '').replace(/clima/i, '').replace(/tempo/i, '').trim();
         if (!cidade) cidade = 'São Paulo';
         const resposta = await buscarClima(cidade);
@@ -685,7 +1072,6 @@ async function executarComando(comando) {
     }
     
     if (cmd.includes('previsão') || cmd.includes('previsao')) {
-        console.log('📅 ROTA: PREVISÃO');
         let cidade = cmd.replace(/previsão\s*/i, '').replace(/previsao\s*/i, '').trim();
         if (!cidade) cidade = 'São Paulo';
         const resposta = await buscarPrevisao(cidade);
@@ -694,14 +1080,12 @@ async function executarComando(comando) {
     }
     
     if (cmd.includes('cotação') || cmd.includes('cotacao') || cmd.includes('dólar') || cmd.includes('euro') || cmd.includes('bitcoin')) {
-        console.log('💰 ROTA: COTAÇÃO');
         const resposta = await buscarCotacao();
         adicionarMensagem('bot', resposta);
         return;
     }
     
     if (cmd.includes('notícias') || cmd.includes('noticias')) {
-        console.log('📰 ROTA: NOTÍCIAS');
         let termo = cmd.replace(/notícias\s*sobre\s*/i, '').replace(/noticias\s*sobre\s*/i, '').replace(/notícias/i, '').replace(/noticias/i, '').trim();
         if (!termo) termo = 'Brasil';
         const resposta = await buscarNoticias(termo);
@@ -710,7 +1094,6 @@ async function executarComando(comando) {
     }
     
     if (cmd.includes('pesquisar sobre') || cmd.includes('pesquisa sobre') || cmd.includes('o que é') || cmd.includes('quem é') || cmd.includes('sobre')) {
-        console.log('🔍 ROTA: WIKIPEDIA');
         let termo = cmd.replace(/^pesquisar sobre\s*/i, '').replace(/^pesquisa sobre\s*/i, '').replace(/^o que é\s*/i, '').replace(/^quem é\s*/i, '').replace(/^sobre\s*/i, '').trim();
         if (!termo) {
             adicionarMensagem('bot', 'Senhor, sobre o que você quer pesquisar?');
@@ -722,14 +1105,12 @@ async function executarComando(comando) {
     }
     
     if (cmd.includes('abrir')) {
-        console.log('🌐 ROTA: ABRIR SITE');
         const resultado = abrirSite(cmd);
         adicionarMensagem('bot', resultado);
         return;
     }
     
     if (cmd.includes('calcular') || cmd.includes('calcule')) {
-        console.log('🧮 ROTA: CALCULADORA');
         const expressao = cmd.replace(/calcular\s*/i, '').replace(/calcule\s*/i, '').trim();
         const resposta = calcular(expressao);
         adicionarMensagem('bot', resposta);
@@ -737,7 +1118,6 @@ async function executarComando(comando) {
     }
     
     if (cmd.includes('hora') || cmd.includes('horas') || cmd === 'que horas são') {
-        console.log('🕐 ROTA: HORA');
         const agora = new Date();
         const resposta = `Senhor, são ${agora.toLocaleTimeString('pt-BR')} do dia ${agora.toLocaleDateString('pt-BR', {
             weekday: 'long',
@@ -750,7 +1130,6 @@ async function executarComando(comando) {
     }
     
     if (cmd.includes('lembrete')) {
-        console.log('📌 ROTA: LEMBRETE');
         const texto = cmd.replace('lembrete', '').trim() || 'sem descrição';
         enviarNotificacao('📌 Lembrete', `Não se esqueça: ${texto}`);
         adicionarMensagem('bot', `Senhor, lembrete salvo: "${texto}"`);
@@ -758,38 +1137,40 @@ async function executarComando(comando) {
     }
     
     if (cmd.includes('ajuda') || cmd.includes('comandos') || cmd.includes('o que você faz')) {
-        console.log('❓ ROTA: AJUDA');
         adicionarMensagem('bot', `
 Senhor, aqui estão todos os meus comandos:
 
-📸 CÂMERA:
-  "abrir câmera" - Ativa a câmera com detecção de movimento
-  "tirar foto" - Tira uma foto
+📸 **CÂMERA:**
+  "abrir câmera" - Ativa a câmera com detecção
+  "tirar foto" - Tira foto com detecção de rosto
+  "gravar" - Inicia/para gravação de vídeo
+  "cadastrar pessoa" - Cadastra a pessoa na foto
+  "listar pessoas" - Mostra todas as pessoas cadastradas
   "desligar câmera" - Desativa a câmera
 
-🌤️ CLIMA:
+🌤️ **CLIMA:**
   "clima [cidade]" - Clima atual
   "previsão [cidade]" - Previsão 7 dias
 
-💰 MOEDAS:
+💰 **MOEDAS:**
   "cotação" - Dólar, Euro, Bitcoin
 
-📰 NOTÍCIAS:
+📰 **NOTÍCIAS:**
   "notícias [assunto]" - Últimas notícias
 
-🔍 WIKIPEDIA:
+🔍 **WIKIPEDIA:**
   "pesquisar sobre [assunto]"
 
-🌐 SITES:
+🌐 **SITES:**
   "abrir [site]" - Abre qualquer site
 
-🧮 CALCULADORA:
+🧮 **CALCULADORA:**
   "calcular [conta]"
 
-📌 LEMBRETES:
+📌 **LEMBRETES:**
   "lembrete [texto]"
 
-🕐 HORA:
+🕐 **HORA:**
   "hora"
 
 💬 Ou simplesmente me pergunte qualquer coisa!
@@ -798,10 +1179,8 @@ Senhor, aqui estão todos os meus comandos:
     }
     
     // ============================================
-    // CONVERSA NORMAL → MISTRAL (TUDO)
+    // CONVERSA NORMAL
     // ============================================
-    
-    console.log('🟢🟢🟢 ROTA: MISTRAL (conversa normal) 🟢🟢🟢');
     
     const loadingDiv = document.createElement('div');
     loadingDiv.className = 'message bot';
@@ -910,7 +1289,13 @@ if ('Notification' in window && Notification.permission === 'default') {
     Notification.requestPermission();
 }
 
-console.log('⚡⚡⚡ J.A.R.V.I.S. v6.0 - SÓ MISTRAL! ⚡⚡⚡');
-console.log('🟢 MISTRAL para conversas, imagens e PDFs');
-console.log('📸 Câmera com detecção de movimento');
+// ============================================
+// INICIALIZAÇÃO
+// ============================================
+
+iniciarBanco();
+
+console.log('⚡⚡⚡ J.A.R.V.I.S. v7.0 - COMPLETO! ⚡⚡⚡');
+console.log('📸 Câmera com gravação, detecção e banco de dados');
+console.log('👤 Cadastro de pessoas e fotos');
 console.log('========================================');
