@@ -1,20 +1,27 @@
-const CACHE_NAME = 'jarvis-v1.0';
+const CACHE_NAME = 'jarvis-v7.0';
+
 const ASSETS = [
     'index.html',
     'style.css',
     'script.js',
+    'script1.js',
     'manifest.json',
     'icon.png'
 ];
 
+// INSTALAÇÃO
 self.addEventListener('install', event => {
     event.waitUntil(
         caches.open(CACHE_NAME)
-            .then(cache => cache.addAll(ASSETS))
+            .then(cache => {
+                console.log('✅ Cache atualizado para v7.0');
+                return cache.addAll(ASSETS);
+            })
             .then(() => self.skipWaiting())
     );
 });
 
+// ATIVAÇÃO - FORÇA LIMPEZA DO CACHE ANTIGO
 self.addEventListener('activate', event => {
     event.waitUntil(
         caches.keys().then(keys => {
@@ -23,12 +30,14 @@ self.addEventListener('activate', event => {
                     .map(key => caches.delete(key))
             );
         })
+        .then(() => self.clients.claim())
     );
 });
 
+// FETCH - SEMPRE BUSCA DO SERVIDOR PRIMEIRO
 self.addEventListener('fetch', event => {
     event.respondWith(
-        caches.match(event.request)
-            .then(response => response || fetch(event.request))
+        fetch(event.request)
+            .catch(() => caches.match(event.request))
     );
 });
