@@ -1,33 +1,22 @@
 // ============================================
-// J.A.R.V.I.S. v6.0 - DUAL API (GROQ + MISTRAL)
+// J.A.R.V.I.S. v6.0 - SÓ MISTRAL (TUDO EM UM)
 // ============================================
 
 // ============================================
 // CONFIGURAÇÕES
 // ============================================
 
-// 🔥 GROQ (para conversas - respeita prompt!)
-const GROQ_API_KEY = "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";
-const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const GROQ_MODEL = "llama-3.3-70b-versatile";
-
-// OPÇÃO 3: Gemma 2 (Google)
-// const GROQ_MODEL = "gemma2-9b-it";
-
-// OPÇÃO 4: Llama 3.2 (mais novo)
-// const GROQ_MODEL = "llama-3.2-3b-preview";
-
-// Mistral (para imagens)
+// 🔥 MISTRAL (para TUDO - conversas, imagens, PDFs)
 const MISTRAL_API_KEY = "0k7vwPq3YQ2lq29J1dcxciBwyxE5QBV5";
 const MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions";
-const MISTRAL_MODEL = "pixtral-12b-2409";
+const MISTRAL_MODEL = "pixtral-12b-2409"; // Modelo multimodal (texto + imagem)
 
 // APIs externas
 const WEATHER_API_KEY = "b25c59171a3445ceaf6182554262105";
 const NEWS_API_KEY = "509da2e5def74a41a7c33c90134c071a";
 
 // ============================================
-// SYSTEM PROMPT (para o Groq)
+// SYSTEM PROMPT (personalidade J.A.R.V.I.S.)
 // ============================================
 
 const SYSTEM_PROMPT = `Você é o J.A.R.V.I.S., a IA criada por Tony Stark.
@@ -141,70 +130,11 @@ function limparFormatacao(texto) {
 }
 
 // ============================================
-// 1. CHAMAR GROQ (PARA CONVERSAS)
-// ============================================
-
-async function chamarGroq(pergunta) {
-    console.log('🔵🔵🔵 CHAMANDO GROQ (conversa normal) 🔵🔵🔵');
-    console.log('📝 Pergunta:', pergunta);
-    console.log('📌 Modelo:', GROQ_MODEL);
-    console.log('📌 Prompt:', SYSTEM_PROMPT.substring(0, 100) + '...');
-    
-    try {
-        const response = await fetch(GROQ_URL, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${GROQ_API_KEY}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                model: GROQ_MODEL,
-                messages: [
-                    { role: 'system', content: SYSTEM_PROMPT },
-                    ...historico.slice(-10),
-                    { role: 'user', content: pergunta }
-                ],
-                temperature: 0.7,
-                max_tokens: 800
-            })
-        });
-
-        const data = await response.json();
-        
-        if (data.error) {
-            console.error('❌ Erro GROQ:', data.error);
-            return `❌ Erro: ${data.error.message}`;
-        }
-
-        let resposta = data.choices[0].message.content;
-        resposta = limparFormatacao(resposta);
-        
-        // Se não começou com "Senhor", força
-        if (!resposta.toLowerCase().includes('senhor') && !resposta.toLowerCase().includes('meu criador')) {
-            resposta = `Senhor, ${resposta}`;
-        }
-        
-        console.log('✅ RESPOSTA GROQ:', resposta.substring(0, 100) + '...');
-        
-        historico.push({ role: 'user', content: pergunta });
-        historico.push({ role: 'assistant', content: resposta });
-        
-        if (historico.length > 20) historico = historico.slice(-20);
-        
-        return resposta;
-        
-    } catch (error) {
-        console.error('❌ Erro GROQ:', error);
-        return `❌ Erro de conexão: ${error.message}`;
-    }
-}
-
-// ============================================
-// 2. CHAMAR MISTRAL (APENAS PARA IMAGENS/PDF)
+// CHAMAR MISTRAL (TUDO - TEXTO, IMAGENS, PDF)
 // ============================================
 
 async function chamarMistral(pergunta, imagem = null) {
-    console.log('🟢🟢🟢 CHAMANDO MISTRAL (imagem/PDF) 🟢🟢🟢');
+    console.log('🟢🟢🟢 CHAMANDO MISTRAL 🟢🟢🟢');
     console.log('📝 Pergunta:', pergunta);
     console.log('📌 Modelo:', MISTRAL_MODEL);
     
@@ -228,14 +158,11 @@ async function chamarMistral(pergunta, imagem = null) {
                 model: MISTRAL_MODEL,
                 messages: [
                     { 
-                        role: 'user', 
-                        content: `ATENÇÃO: Você é o J.A.R.V.I.S. O usuário é seu criador. 
-                        Chame-o de "SENHOR" em todas as respostas. Seja leal, educado e útil.
-                        Responda em português brasileiro.
-                        NUNCA use formatação como **, *, #.
-                        
-                        ANALISE A IMAGEM E RESPONDA: ${pergunta}`
-                    }
+                        role: 'system', 
+                        content: SYSTEM_PROMPT
+                    },
+                    ...historico.slice(-5),
+                    mensagem
                 ],
                 temperature: 0.7,
                 max_tokens: 800
@@ -252,11 +179,17 @@ async function chamarMistral(pergunta, imagem = null) {
         let resposta = data.choices[0].message.content;
         resposta = limparFormatacao(resposta);
         
+        // Se não começou com "Senhor", força
         if (!resposta.toLowerCase().includes('senhor') && !resposta.toLowerCase().includes('meu criador')) {
             resposta = `Senhor, ${resposta}`;
         }
         
         console.log('✅ RESPOSTA MISTRAL:', resposta.substring(0, 100) + '...');
+        
+        historico.push({ role: 'user', content: pergunta });
+        historico.push({ role: 'assistant', content: resposta });
+        
+        if (historico.length > 20) historico = historico.slice(-20);
         
         return resposta;
         
@@ -865,10 +798,10 @@ Senhor, aqui estão todos os meus comandos:
     }
     
     // ============================================
-    // CONVERSA NORMAL → GROQ (RESPEITA PROMPT!)
+    // CONVERSA NORMAL → MISTRAL (TUDO)
     // ============================================
     
-    console.log('🔵🔵🔵 ROTA: GROQ (conversa normal) 🔵🔵🔵');
+    console.log('🟢🟢🟢 ROTA: MISTRAL (conversa normal) 🟢🟢🟢');
     
     const loadingDiv = document.createElement('div');
     loadingDiv.className = 'message bot';
@@ -877,7 +810,7 @@ Senhor, aqui estão todos os meus comandos:
     document.getElementById('chat').appendChild(loadingDiv);
     document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
     
-    const respostaIA = await chamarGroq(cmd);
+    const respostaIA = await chamarMistral(cmd);
     
     const loadingElement = document.getElementById('loading-msg');
     if (loadingElement) loadingElement.remove();
@@ -977,8 +910,7 @@ if ('Notification' in window && Notification.permission === 'default') {
     Notification.requestPermission();
 }
 
-console.log('⚡⚡⚡ J.A.R.V.I.S. v6.0 iniciado! ⚡⚡⚡');
-console.log('🔵 GROQ para conversas (chama de "Senhor")');
-console.log('🟢 MISTRAL para imagens e PDFs');
+console.log('⚡⚡⚡ J.A.R.V.I.S. v6.0 - SÓ MISTRAL! ⚡⚡⚡');
+console.log('🟢 MISTRAL para conversas, imagens e PDFs');
 console.log('📸 Câmera com detecção de movimento');
 console.log('========================================');
