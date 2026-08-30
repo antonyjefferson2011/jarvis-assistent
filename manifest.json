@@ -1,21 +1,20 @@
 {
-    "name": "J.A.R.V.I.S. v6.1 - Assistente Pessoal",
-    "short_name": "JARVIS v6.1",
-    "description": "Assistente pessoal com IA, visão, PDF, clima e muito mais",
-    "start_url": "index.html?v=6.1",
+    "name": "J.A.R.V.I.S. v7.0",
+    "short_name": "JARVIS v7",
+    "start_url": "index.html?v=7.0",
     "display": "standalone",
     "orientation": "portrait",
     "background_color": "#0a0a0f",
     "theme_color": "#ffd700",
     "icons": [
         {
-            "src": "icon.png?v=6.1",
+            "src": "icon.png?v=7.0",
             "sizes": "192x192",
             "type": "image/png",
             "purpose": "any"
         },
         {
-            "src": "icon.png?v=6.1",
+            "src": "icon.png?v=7.0",
             "sizes": "512x512",
             "type": "image/png",
             "purpose": "any"
